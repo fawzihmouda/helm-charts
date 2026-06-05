@@ -1,0 +1,9 @@
+apiVersion: v2
+name: application
+description: Generic helm chart for all kind of applications
+
+type: application
+
+# Helm chart Version
+
+version: 1.0.0

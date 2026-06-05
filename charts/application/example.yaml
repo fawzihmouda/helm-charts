@@ -1,0 +1,156 @@
+# Test values for deploying a hello-world demo to GKE.
+#
+# The demo uses hashicorp/http-echo (public image) and prints a message
+# sourced from GCP Secret Manager. Flow:
+#   GCP Secret Manager -> ExternalSecret -> Kubernetes Secret -> pod env -> -text flag
+#
+# Prerequisites already provisioned:
+#   - ClusterSecretStore "gcp-secret-store"
+#   - Gateway "shared-external" in namespace "gateway-infra"
+#   - GCP Secret Manager secret named "hello-world-message" (update below if different)
+#
+# Install:
+#   helm install hello-world . -f example.yaml \
+#     --namespace hello-world --create-namespace
+#
+# Change the displayed text by updating the GCP Secret Manager value; ESO refreshes
+# the Kubernetes Secret and stakater/reloader restarts the pod.
+
+applicationName: hello-world
+
+additionalLabels:
+  app: '{{ include "application.name" . }}'
+  env: test
+
+deployment:
+  replicas: 1
+  reloadOnChange: true
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+
+  image:
+    repository: hashicorp/http-echo
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+
+  # http-echo requires -text. $(MESSAGE) expands from the env block below.
+  args:
+  - "-listen=:5678"
+  - "-text=$(MESSAGE)"
+
+  env:
+    MESSAGE:
+      valueFrom:
+        secretKeyRef:
+          name: '{{ include "application.name" . }}-message'
+          key: message
+
+  ports:
+  - containerPort: 5678
+    name: http
+    protocol: TCP
+
+  startupProbe:
+    enabled: true
+    failureThreshold: 10
+    periodSeconds: 3
+    successThreshold: 1
+    timeoutSeconds: 1
+    initialDelaySeconds: 2
+    httpGet:
+      path: /
+      port: 5678
+
+  readinessProbe:
+    enabled: true
+    failureThreshold: 3
+    periodSeconds: 10
+    successThreshold: 1
+    timeoutSeconds: 1
+    initialDelaySeconds: 3
+    httpGet:
+      path: /
+      port: 5678
+
+  livenessProbe:
+    enabled: true
+    failureThreshold: 3
+    periodSeconds: 20
+    successThreshold: 1
+    timeoutSeconds: 1
+    initialDelaySeconds: 10
+    httpGet:
+      path: /
+      port: 5678
+
+  resources:
+    limits:
+      memory: 64Mi
+      cpu: 100m
+    requests:
+      memory: 32Mi
+      cpu: 10m
+
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 65534
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    seccompProfile:
+      type: RuntimeDefault
+
+  terminationGracePeriodSeconds: 30
+  automountServiceAccountToken: false
+
+service:
+  enabled: true
+  type: ClusterIP
+  ports:
+  - port: 80
+    name: http
+    protocol: TCP
+    targetPort: 5678
+
+httpRoute:
+  enabled: true
+  parentRefs:
+  - name: shared-external
+    namespace: gateway-infra
+  hostnames:
+  - test.fawzi.io
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: '{{ include "application.name" . }}'
+      port: 80
+
+rbac:
+  enabled: true
+  serviceAccount:
+    enabled: true
+    name: ""
+
+externalSecret:
+  enabled: true
+  secretStore:
+    name: gcp-secret-store
+    kind: ClusterSecretStore
+  refreshInterval: "1m"
+  files:
+    message:
+      data:
+        # Key in the resulting Kubernetes Secret. Referenced by deployment.env.MESSAGE.
+        message:
+          remoteRef:
+            # Name of the secret in GCP Secret Manager.
+            key: test
