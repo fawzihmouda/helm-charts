@@ -1,0 +1,53 @@
+name: Mirror Helm charts
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "charts.yaml"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  ARTIFACT_REGISTRY: australia-southeast1-docker.pkg.dev/fawzi-h/helm-registry
+  HELM_VERSION: v4.2.0
+  MIRROR_MANIFEST: charts.yaml
+
+jobs:
+  mirror:
+    name: Mirror charts
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: helm-mirror-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.3
+        with:
+          persist-credentials: false
+
+      - id: gcp-auth
+        name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          token_format: access_token
+          workload_identity_provider: projects/423586048949/locations/global/workloadIdentityPools/github-action-pool/providers/github-action-provider
+          service_account: deployment-sa@fawzi-h.iam.gserviceaccount.com
+          access_token_lifetime: 3600s
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5.0.0
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Login to Artifact Registry
+        env:
+          GCP_ACCESS_TOKEN: ${{ steps.gcp-auth.outputs.access_token }}
+        run: .github/scripts/gcp-helm-registry-login.sh
+
+      - name: Mirror charts
+        run: .github/scripts/mirror-public-charts.sh

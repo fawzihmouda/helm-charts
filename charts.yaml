@@ -1,0 +1,17 @@
+charts:
+  - name: cert-manager
+    chart: cert-manager/cert-manager
+    repository: https://charts.jetstack.io
+    version: v1.20.2
+  - name: external-secrets
+    chart: external-secrets/external-secrets
+    repository: https://charts.external-secrets.io
+    version: 2.5.0
+  - name: argo-cd
+    chart: argo/argo-cd
+    repository: https://argoproj.github.io/argo-helm
+    version: 9.5.19
+  - name: application
+    chart: application
+    repository: ./charts/application
+    version: 1.0.0
