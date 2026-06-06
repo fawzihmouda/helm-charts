@@ -16,6 +16,6 @@ if [[ -z "${registry_host}" || "${registry_host}" == "${ARTIFACT_REGISTRY}" ]]; 
   exit 1
 fi
 
-printf '%s\n' "${GCP_ACCESS_TOKEN}" | helm registry login "https://${registry_host}" \
+printf '%s\n' "${GCP_ACCESS_TOKEN}" | helm registry login "${registry_host}" \
   -u oauth2accesstoken \
   --password-stdin
