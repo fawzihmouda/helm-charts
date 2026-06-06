@@ -6,8 +6,6 @@ on:
       - main
     paths:
       - "charts/**"
-      - ".github/scripts/**"
-      - ".github/workflows/publish-charts.yaml"
 
 permissions:
   contents: read
