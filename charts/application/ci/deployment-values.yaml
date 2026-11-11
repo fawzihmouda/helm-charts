@@ -1,0 +1,284 @@
+# Deployment with every optional resource enabled, and third-party CRDs through extraObjects.
+# Expects the test cluster add-ons: Envoy Gateway (Gateway gateway-infra/shared-external),
+# cert-manager (ClusterIssuer ca-issuer), External Secrets (ClusterSecretStore fake-store),
+# kube-prometheus-stack, grafana-operator (Grafana labelled dashboards: grafana).
+fullnameOverride: web
+
+additionalLabels:
+  example.com/team: platform
+
+workload:
+  replicas: 2
+  image:
+    repository: ghcr.io/stefanprodan/podinfo
+    tag: "6.17.0"
+  # podinfo sets CMD, not ENTRYPOINT, so args alone would replace the binary.
+  command: ["./podinfo"]
+  args:
+    - --port=8080
+    - --level=info
+  ports:
+    - containerPort: 8080
+      name: http
+  envFrom:
+    - configMapRef:
+        name: '{{ include "application.fullname" . }}-settings'
+    - secretRef:
+        name: '{{ include "application.fullname" . }}-db'
+  # A list keeps order, so GREETING can reference NAME.
+  env:
+    - name: NAME
+      value: world
+    - name: GREETING
+      value: "hello $(NAME)"
+    - name: MESSAGE
+      valueFrom:
+        secretKeyRef:
+          name: '{{ include "application.fullname" . }}-message'
+          key: message
+  initContainers:
+    - name: first
+      image: busybox:1.37
+      command: ["sh", "-c", "echo first"]
+    - name: second
+      image: busybox:1.37
+      command: ["sh", "-c", "echo second"]
+  startupProbe:
+    failureThreshold: 30
+    periodSeconds: 2
+    httpGet:
+      path: /healthz
+      port: http
+  readinessProbe:
+    failureThreshold: 3
+    periodSeconds: 5
+    httpGet:
+      path: /readyz
+      port: http
+  livenessProbe:
+    failureThreshold: 3
+    periodSeconds: 10
+    tcpSocket:
+      port: http
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+  securityContext:
+    # podinfo's image user is a name, and busybox runs as root, so runAsNonRoot needs a UID.
+    runAsUser: 1000
+    fsGroup: 1000
+  volumes:
+    config:
+      configMap:
+        name: '{{ include "application.fullname" . }}-files'
+  volumeMounts:
+    config:
+      mountPath: /etc/web
+      readOnly: true
+  automountServiceAccountToken: false
+  terminationGracePeriodSeconds: 10
+
+persistence:
+  enabled: true
+  mountPVC: true
+  storageSize: 1Gi
+
+service:
+  ports:
+    - port: 80
+      name: http
+      protocol: TCP
+      targetPort: http
+
+httpRoute:
+  enabled: true
+  parentRefs:
+    - name: shared-external
+      namespace: gateway-infra
+  hostnames:
+    - web.example.test
+
+serviceAccount:
+  create: true
+
+rbac:
+  roles:
+    - name: configmaps
+      rules:
+        - apiGroups: [""]
+          resources: [configmaps]
+          verbs: [get, list]
+
+configMap:
+  enabled: true
+  items:
+    settings:
+      data:
+        LOG_FORMAT: json
+    files:
+      data:
+        app.conf: |
+          name = {{ include "application.fullname" . }}
+
+secret:
+  enabled: true
+  items:
+    static:
+      data:
+        token: abc123
+        port: 5432
+      stringData:
+        mode: test
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+
+pdb:
+  enabled: true
+
+networkPolicy:
+  enabled: true
+  ingress:
+    - ports:
+        - port: 8080
+          protocol: TCP
+
+job:
+  enabled: true
+  jobs:
+    migrate:
+      image:
+        repository: busybox
+        tag: "1.37"
+      command: ["sh", "-c", "echo migrating $(TARGET)"]
+      env:
+        - name: TARGET
+          value: db
+      backoffLimit: 1
+      securityContext:
+        runAsUser: 1000
+
+cronJob:
+  enabled: true
+  jobs:
+    cleanup:
+      schedule: "*/1 * * * *"
+      timeZone: Australia/Sydney
+      startingDeadlineSeconds: 60
+      concurrencyPolicy: Forbid
+      successfulJobsHistoryLimit: 1
+      image:
+        repository: busybox
+        tag: "1.37"
+      command: ["sh", "-c", "echo cleanup"]
+      securityContext:
+        runAsUser: 1000
+
+extraObjects:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: '{{ include "application.fullname" . }}-extra'
+    data:
+      release: '{{ .Release.Name }}'
+  # Read by workload.env.MESSAGE.
+  - apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: '{{ include "application.fullname" . }}-message'
+    spec:
+      refreshInterval: 1m
+      secretStoreRef:
+        name: fake-store
+        kind: ClusterSecretStore
+      target:
+        name: '{{ include "application.fullname" . }}-message'
+      data:
+        - secretKey: message
+          remoteRef:
+            key: hello-world-message
+  # Read by workload.envFrom.
+  - apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: '{{ include "application.fullname" . }}-db'
+    spec:
+      refreshInterval: 1m
+      secretStoreRef:
+        name: fake-store
+        kind: ClusterSecretStore
+      target:
+        name: '{{ include "application.fullname" . }}-db'
+      dataFrom:
+        - extract:
+            key: db
+  - apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: '{{ include "application.fullname" . }}-certificate'
+    spec:
+      secretName: '{{ include "application.fullname" . }}-tls'
+      dnsNames:
+        - web.example.test
+      privateKey:
+        algorithm: ECDSA
+        size: 256
+      issuerRef:
+        name: ca-issuer
+        kind: ClusterIssuer
+        group: cert-manager.io
+  - |
+    apiVersion: monitoring.coreos.com/v1
+    kind: ServiceMonitor
+    metadata:
+      name: {{ include "application.fullname" . }}-svc-monitor
+    spec:
+      selector:
+        matchLabels:
+          {{- include "application.selectorLabels" . | nindent 10 }}
+      endpoints:
+        - port: http
+          path: /metrics
+          interval: 30s
+  - apiVersion: monitoring.coreos.com/v1
+    kind: PrometheusRule
+    metadata:
+      name: '{{ include "application.fullname" . }}'
+    spec:
+      groups:
+        - name: web
+          rules:
+            - alert: WebDown
+              expr: up{job="web"} == 0
+              for: 5m
+              labels:
+                severity: critical
+  - apiVersion: monitoring.coreos.com/v1alpha1
+    kind: AlertmanagerConfig
+    metadata:
+      name: '{{ include "application.fullname" . }}'
+      labels:
+        alertmanagerConfig: workload
+    spec:
+      route:
+        receiver: "null"
+        groupBy: [alertname]
+      receivers:
+        - name: "null"
+  - apiVersion: grafana.integreatly.org/v1beta1
+    kind: GrafanaDashboard
+    metadata:
+      name: '{{ include "application.fullname" . }}-overview'
+    spec:
+      # The Grafana instance runs in another namespace.
+      allowCrossNamespaceImport: true
+      instanceSelector:
+        matchLabels:
+          dashboards: grafana
+      json: |
+        {"title": "web overview", "panels": []}

@@ -7,24 +7,23 @@
 # Prerequisites already provisioned:
 #   - ClusterSecretStore "gcp-secret-store"
 #   - Gateway "shared-external" in namespace "gateway-infra"
-#   - GCP Secret Manager secret named "hello-world-message" (update below if different)
+#   - GCP Secret Manager secret named "test" (update below if different)
 #
 # Install:
 #   helm install hello-world . -f example.yaml \
 #     --namespace hello-world --create-namespace
 #
-# Change the displayed text by updating the GCP Secret Manager value; ESO refreshes
-# the Kubernetes Secret and stakater/reloader restarts the pod.
+# Change the displayed text by updating the GCP Secret Manager value. ESO refreshes
+# the Kubernetes Secret. Restart the pod to load the new value.
 
-applicationName: hello-world
+fullnameOverride: hello-world
 
 additionalLabels:
-  app: '{{ include "application.name" . }}'
+  app: '{{ include "application.fullname" . }}'
   env: test
 
-deployment:
+workload:
   replicas: 1
-  reloadOnChange: true
 
   strategy:
     type: RollingUpdate
@@ -46,7 +45,7 @@ deployment:
     MESSAGE:
       valueFrom:
         secretKeyRef:
-          name: '{{ include "application.name" . }}-message'
+          name: '{{ include "application.fullname" . }}-message'
           key: message
 
   ports:
@@ -55,7 +54,6 @@ deployment:
     protocol: TCP
 
   startupProbe:
-    enabled: true
     failureThreshold: 10
     periodSeconds: 3
     successThreshold: 1
@@ -66,7 +64,6 @@ deployment:
       port: 5678
 
   readinessProbe:
-    enabled: true
     failureThreshold: 3
     periodSeconds: 10
     successThreshold: 1
@@ -77,7 +74,6 @@ deployment:
       port: 5678
 
   livenessProbe:
-    enabled: true
     failureThreshold: 3
     periodSeconds: 20
     successThreshold: 1
@@ -95,16 +91,8 @@ deployment:
       memory: 32Mi
       cpu: 10m
 
-  containerSecurityContext:
-    readOnlyRootFilesystem: true
-    runAsNonRoot: true
+  securityContext:
     runAsUser: 65534
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-      - ALL
-    seccompProfile:
-      type: RuntimeDefault
 
   terminationGracePeriodSeconds: 30
   automountServiceAccountToken: false
@@ -131,26 +119,28 @@ httpRoute:
         type: PathPrefix
         value: /
     backendRefs:
-    - name: '{{ include "application.name" . }}'
+    - name: '{{ include "application.fullname" . }}'
       port: 80
 
-rbac:
-  enabled: true
-  serviceAccount:
-    enabled: true
-    name: ""
+serviceAccount:
+  create: true
 
-externalSecret:
-  enabled: true
-  secretStore:
-    name: gcp-secret-store
-    kind: ClusterSecretStore
-  refreshInterval: "1m"
-  files:
-    message:
+extraObjects:
+  # Read by workload.env.MESSAGE.
+  - apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: '{{ include "application.fullname" . }}-message'
+    spec:
+      refreshInterval: 1m
+      secretStoreRef:
+        name: gcp-secret-store
+        kind: ClusterSecretStore
+      target:
+        name: '{{ include "application.fullname" . }}-message'
       data:
-        # Key in the resulting Kubernetes Secret. Referenced by deployment.env.MESSAGE.
-        message:
+        # Key in the resulting Kubernetes Secret.
+        - secretKey: message
           remoteRef:
             # Name of the secret in GCP Secret Manager.
             key: test

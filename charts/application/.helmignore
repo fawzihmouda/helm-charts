@@ -1,7 +1,14 @@
-# so we dont include these in our chart secret
+# Files that don't belong in the packaged chart.
+.DS_Store
+.git/
+.gitignore
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+.idea/
+.vscode/
+ci/
 tests/
-docs/
-tekton/
-quick-starts/
-README.md
-.git
+example.yaml

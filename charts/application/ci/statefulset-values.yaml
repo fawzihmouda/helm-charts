@@ -1,0 +1,56 @@
+# StatefulSet with one PVC per pod. The chart adds the headless Service.
+fullnameOverride: store
+
+workload:
+  kind: StatefulSet
+  replicas: 2
+  podManagementPolicy: Parallel
+  image:
+    repository: ghcr.io/stefanprodan/podinfo
+    tag: "6.17.0"
+  # podinfo sets CMD, not ENTRYPOINT, so args alone would replace the binary.
+  command: ["./podinfo"]
+  args:
+    - --port=8080
+    - --data-path=/data
+  ports:
+    - containerPort: 8080
+      name: http
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+  securityContext:
+    runAsUser: 1000
+    fsGroup: 1000
+
+persistence:
+  enabled: true
+  mountPVC: true
+  storageSize: 1Gi
+
+service:
+  ports:
+    - port: 8080
+      name: http
+      targetPort: http
+
+pdb:
+  enabled: true
+
+extraObjects:
+  - apiVersion: autoscaling.k8s.io/v1
+    kind: VerticalPodAutoscaler
+    metadata:
+      name: '{{ include "application.fullname" . }}'
+    spec:
+      targetRef:
+        apiVersion: apps/v1
+        kind: '{{ include "application.workloadKind" . }}'
+        name: '{{ include "application.fullname" . }}'
+      updatePolicy:
+        updateMode: "Off"

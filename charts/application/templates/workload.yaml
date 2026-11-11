@@ -1,279 +1,122 @@
-{{- if .Values.deployment.enabled }}
+{{- if .Values.workload.enabled }}
+{{- $kind := include "application.workloadKind" . }}
+{{- $name := include "application.fullname" . }}
+{{- $w := .Values.workload }}
+{{- $p := .Values.persistence }}
+{{- $mountPVC := and $p.enabled $p.mountPVC }}
+{{- /* A StatefulSet gets one PVC per pod from a claim template instead of the shared PVC. */}}
+{{- $claimTemplate := and $p.enabled (eq $kind "StatefulSet") (not $p.existingClaim) }}
+{{- /* The chart's own PVC, shared by every pod. An existing claim's access mode is unknown. */}}
+{{- $sharedPVC := and $mountPVC (not $claimTemplate) (not $p.existingClaim) }}
+{{- $manyPods := or .Values.autoscaling.enabled (gt (int $w.replicas) 1) }}
+{{- if and (eq $kind "StatefulSet") (gt (len $name) 52) }}
+{{- fail "A StatefulSet name must be at most 52 characters, so its controller-revision-hash label fits in 63" }}
+{{- end }}
+{{- if and $sharedPVC (eq $kind "DaemonSet") (has $p.accessMode (list "ReadWriteOnce" "ReadWriteOncePod")) }}
+{{- fail (printf "persistence.accessMode %s can't be shared by DaemonSet pods on different nodes: use ReadWriteMany" $p.accessMode) }}
+{{- end }}
+{{- if and $sharedPVC $manyPods (eq $p.accessMode "ReadWriteOncePod") }}
+{{- fail "persistence.accessMode ReadWriteOncePod allows one pod: use one replica without autoscaling, or workload.kind StatefulSet" }}
+{{- end }}
+{{- $strategy := deepCopy (default dict $w.strategy) }}
+{{- if not $strategy.type }}
+{{- /* A RollingUpdate can't start the new pod while the old pod holds a single-node volume. */}}
+{{- $recreate := and (eq $kind "Deployment") $mountPVC (has $p.accessMode (list "ReadWriteOnce" "ReadWriteOncePod")) (not $strategy.rollingUpdate) }}
+{{- $_ := set $strategy "type" (ternary "Recreate" "RollingUpdate" $recreate) }}
+{{- end }}
+{{- if eq $strategy.type "RollingUpdate" }}
+{{- /* Kubernetes fills in every rollingUpdate field and rejects the block with another type.
+Rendering its defaults makes Helm own the fields, so Helm removes them when the type changes. */}}
+{{- $defaults := get (dict
+  "Deployment" (dict "maxSurge" "25%" "maxUnavailable" "25%")
+  "StatefulSet" (dict "partition" 0 "maxUnavailable" 1)
+  "DaemonSet" (dict "maxSurge" 0 "maxUnavailable" 1)) $kind }}
+{{- $rollingUpdate := deepCopy (default dict $strategy.rollingUpdate) }}
+{{- range $key, $value := $defaults }}
+{{- if not (hasKey $rollingUpdate $key) }}
+{{- $_ := set $rollingUpdate $key $value }}
+{{- end }}
+{{- end }}
+{{- $_ := set $strategy "rollingUpdate" $rollingUpdate }}
+{{- end }}
+{{- /* The pod's volume is named "data": a name built from the release name could pass 63 characters. */}}
+{{- $mounts := list }}
+{{- $devices := list }}
+{{- $volumes := list }}
+{{- if $mountPVC }}
+{{- if eq $p.volumeMode "Block" }}
+{{- $devices = list (dict "name" "data" "devicePath" $p.mountPath) }}
+{{- else }}
+{{- $mounts = list (dict "name" "data" "mountPath" $p.mountPath) }}
+{{- end }}
+{{- if not $claimTemplate }}
+{{- $volumes = list (dict "name" "data" "persistentVolumeClaim" (dict "claimName" (include "application.pvcName" .))) }}
+{{- end }}
+{{- end }}
+{{- /* Roll the pods when the chart's ConfigMaps or Secrets change. ConfigMaps are hashed as rendered by tpl. */}}
+{{- $podAnnotations := dict }}
+{{- $configMaps := and .Values.configMap.enabled .Values.configMap.items }}
+{{- $secrets := and .Values.secret.enabled .Values.secret.items }}
+{{- if or $configMaps $secrets }}
+{{- $rendered := include "application.tplvalues.render" (dict "value" $configMaps "context" .) }}
+{{- $_ := set $podAnnotations "checksum/config" (print $rendered (toJson $secrets) | sha256sum) }}
+{{- end }}
+{{- $podAnnotations = merge (deepCopy (default dict $w.podAnnotations)) $podAnnotations }}
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: {{ $kind }}
 metadata:
+  name: {{ $name | quote }}
+  namespace: {{ include "application.namespace" . | quote }}
   labels:
-  {{- include "application.labels" $ | nindent 4 }}
-{{- if .Values.deployment.additionalLabels }}
-{{ toYaml .Values.deployment.additionalLabels | indent 4 }}
-{{- end }}
-{{- if or .Values.deployment.annotations .Values.deployment.reloadOnChange }}
+    {{- include "application.labelsWith" (dict "context" . "extra" (list $w.additionalLabels)) | nindent 4 }}
+  {{- with $w.annotations }}
   annotations:
-{{- end }}
-{{- if .Values.deployment.annotations }}
-{{ toYaml .Values.deployment.annotations | indent 4 }}
-{{- end }}
-{{- if .Values.deployment.reloadOnChange }}
-    reloader.stakater.com/auto: "true"
-{{- end }}
-  name: {{ template "application.name" . }}
-  namespace: {{ include "application.namespace" . }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
-{{- if not (eq .Values.deployment.replicas nil) }}
-  replicas: {{ .Values.deployment.replicas }}
-{{- end }}
+  {{- if and (ne $kind "DaemonSet") (not .Values.autoscaling.enabled) }}
+  {{- include "application.fields" (dict "from" $w "indent" 2 "names" (list "replicas")) }}
+  {{- end }}
   selector:
     matchLabels:
-{{ include "application.selectorLabels" . | indent 6 }}
-  {{- if .Values.deployment.strategy }}
-  strategy:
-{{ toYaml .Values.deployment.strategy | indent 4 }}
+      {{- include "application.selectorLabels" . | nindent 6 }}
+  {{- with $strategy }}
+  {{ eq $kind "Deployment" | ternary "strategy" "updateStrategy" }}:
+    {{- toYaml . | nindent 4 }}
   {{- end }}
-  {{- if not (kindIs "invalid" .Values.deployment.revisionHistoryLimit) }}
-  revisionHistoryLimit: {{ .Values.deployment.revisionHistoryLimit }}
+  {{- include "application.fields" (dict "from" $w "indent" 2 "names" (list "revisionHistoryLimit" "minReadySeconds")) }}
+  {{- if eq $kind "Deployment" }}
+  {{- include "application.fields" (dict "from" $w "indent" 2 "names" (list "progressDeadlineSeconds")) }}
+  {{- end }}
+  {{- if eq $kind "StatefulSet" }}
+  {{- /* serviceName and volumeClaimTemplates are immutable, so they use only stable values. */}}
+  serviceName: {{ printf "%s-headless" $name | quote }}
+  {{- include "application.fields" (dict "from" $w "indent" 2 "names" (list "podManagementPolicy" "persistentVolumeClaimRetentionPolicy")) }}
+  {{- if $claimTemplate }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+      labels:
+        {{- merge (include "application.selectorLabels" . | fromYaml) (default dict $p.additionalLabels) | toYaml | nindent 8 }}
+      {{- with $p.annotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "application.pvcSpec" . | nindent 6 }}
+  {{- end }}
   {{- end }}
   template:
     metadata:
       labels:
-      {{- include "application.labels" . | nindent 8 }}
-{{- if .Values.deployment.podLabels }}
-{{ toYaml .Values.deployment.podLabels | indent 8 }}
-{{- end }}
-{{- if .Values.deployment.additionalPodAnnotations }}
+        {{- /* No helm.sh/chart label, so a chart upgrade alone doesn't restart the pods. */}}
+        {{- $labels := include "application.labelsWith" (dict "context" . "extra" (list $w.podLabels (include "application.selectorLabels" . | fromYaml))) | fromYaml }}
+        {{- omit $labels "helm.sh/chart" | toYaml | nindent 8 }}
+      {{- with $podAnnotations }}
       annotations:
-{{- end }}
-{{- with .Values.deployment.additionalPodAnnotations }}
-{{ toYaml . | indent 8 }}
-{{- end }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
-      enableServiceLinks: {{ .Values.deployment.enableServiceLinks }}
-      {{- with .Values.deployment.hostAliases }}
-      hostAliases: {{- toYaml . | nindent 6 }}
-      {{- end }}
-      {{- if .Values.deployment.initContainers }}
-      initContainers:
-  {{- range $key, $value := .Values.deployment.initContainers }}
-      - name: {{ $key }}
-{{ include "application.tplvalues.render" ( dict "value" $value "context" $ ) | indent 8 }}
-      {{- end }}
-      {{- end }}
-      {{- if .Values.deployment.nodeSelector }}
-      nodeSelector:
-{{ toYaml .Values.deployment.nodeSelector | indent 8 }}
-      {{- end }}
-      {{- with .Values.deployment.priorityClassName }}
-      priorityClassName: {{ . }}
-      {{- end }}
-      {{- if .Values.deployment.runtimeClassName }}
-      runtimeClassName: {{ .Values.deployment.runtimeClassName }}
-      {{- end }}
-      {{- if .Values.deployment.tolerations }}
-      tolerations:
-{{ toYaml .Values.deployment.tolerations | indent 8 -}}
-      {{- end }}
-      {{- if .Values.deployment.affinity }}
-      affinity:
-{{ toYaml .Values.deployment.affinity | indent 8 -}}
-      {{- end }}
-      {{- with .Values.deployment.topologySpreadConstraints }}
-      topologySpreadConstraints:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.deployment.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      containers:
-      - name: {{ template "application.name" . }}
-        {{- $repo := include "application.tplvalues.render" (dict "value" .Values.deployment.image.repository "context" $) -}}
-        {{- $repo = required "Undefined image for application container" $repo -}}
-
-        {{- $tag    := include "application.tplvalues.render" (dict "value" .Values.deployment.image.tag "context" $) -}}
-        {{- $digest := include "application.tplvalues.render" (dict "value" .Values.deployment.image.digest "context" $) -}}
-
-        {{- $image := $repo -}}
-        {{- with $tag    }} {{- $image  = print $image  ":" . }} {{- end }}
-        {{- with $digest }} {{- $image  = print $image  "@" . }} {{- end }}
-        image: {{ $image }}
-        imagePullPolicy: {{ .Values.deployment.image.pullPolicy }}
-        {{- with .Values.deployment.lifecycle }}
-        lifecycle:
-          {{- toYaml . | nindent 10 }}
-        {{- end }}
-        {{- if .Values.deployment.command }}
-        command: {{- include "application.tplvalues.render" (dict "value" .Values.deployment.command "context" $) | nindent 12 }}
-        {{- end }}
-        {{- if .Values.deployment.args }}
-        args: {{- include "application.tplvalues.render" (dict "value" .Values.deployment.args "context" $) | nindent 12 }}
-        {{- end }}
-        {{- if .Values.deployment.ports }}
-        ports:
-{{ toYaml .Values.deployment.ports | indent 10 }}
-        {{- end }}
-        {{- if .Values.deployment.envFrom }}
-        envFrom:
-        {{- range $value := .Values.deployment.envFrom }}
-        {{- if (eq .type "configmap") }}
-        - configMapRef:
-            {{- if .name }}
-            name: {{ include "application.tplvalues.render" ( dict "value" $value.name "context" $ ) }}
-            {{- else if .nameSuffix }}
-            name: {{ template "application.name" $ }}-{{ include "application.tplvalues.render" ( dict "value" $value.nameSuffix "context" $ ) }}
-            {{- else }}
-            name: {{ template "application.name" $ }}
-            {{- end }}
-            optional: {{ default false $value.optional }}
-        {{- end }}
-        {{- if (eq .type "secret") }}
-        - secretRef:
-            {{- if .name }}
-            name: {{ include "application.tplvalues.render" ( dict "value" $value.name "context" $ ) }}
-            {{- else if .nameSuffix }}
-            name: {{ template "application.name" $ }}-{{ include "application.tplvalues.render" ( dict "value" $value.nameSuffix "context" $ ) }}
-            {{- else }}
-            name: {{ template "application.name" $ }}
-            {{- end }}
-            optional: {{ default false $value.optional }}
-        {{- end }}
-        {{- end }}
-        {{- end }}
-        {{- if .Values.deployment.env }}
-        env:
-        {{- range $key, $value := .Values.deployment.env }}
-        - name: {{ include "application.tplvalues.render" ( dict "value" $key "context" $ ) }}
-{{ include "application.tplvalues.render" ( dict "value" $value "context" $ ) | indent 10 }}
-        {{- end }}
-        {{- end }}
-        {{- if .Values.deployment.startupProbe.enabled }}
-        startupProbe:
-          failureThreshold: {{ .Values.deployment.startupProbe.failureThreshold }}
-          periodSeconds: {{ .Values.deployment.startupProbe.periodSeconds }}
-          successThreshold: {{ .Values.deployment.startupProbe.successThreshold }}
-          timeoutSeconds: {{ .Values.deployment.startupProbe.timeoutSeconds }}
-          initialDelaySeconds: {{ .Values.deployment.startupProbe.initialDelaySeconds }}
-          {{- if .Values.deployment.startupProbe.exec }}
-          exec:
-            {{- toYaml .Values.deployment.startupProbe.exec | nindent 12 }}
-          {{- else if .Values.deployment.startupProbe.httpGet }}
-          httpGet:
-            {{- toYaml .Values.deployment.startupProbe.httpGet | nindent 12 }}
-          {{- else if .Values.deployment.startupProbe.tcpSocket }}
-          tcpSocket:
-            {{- toYaml .Values.deployment.startupProbe.tcpSocket | nindent 12 }}
-          {{- else if .Values.deployment.startupProbe.grpc }}
-          grpc:
-            {{- toYaml .Values.deployment.startupProbe.grpc | nindent 12 }}
-          {{- end }}
-        {{- end }}
-        {{- if .Values.deployment.livenessProbe.enabled }}
-        livenessProbe:
-          failureThreshold: {{ .Values.deployment.livenessProbe.failureThreshold }}
-          periodSeconds: {{ .Values.deployment.livenessProbe.periodSeconds }}
-          successThreshold: {{ .Values.deployment.livenessProbe.successThreshold }}
-          timeoutSeconds: {{ .Values.deployment.livenessProbe.timeoutSeconds }}
-          initialDelaySeconds: {{ .Values.deployment.livenessProbe.initialDelaySeconds }}
-          {{- if .Values.deployment.livenessProbe.exec }}
-          exec:
-            {{- toYaml .Values.deployment.livenessProbe.exec | nindent 12 }}
-          {{- else if .Values.deployment.livenessProbe.httpGet }}
-          httpGet:
-            {{- toYaml .Values.deployment.livenessProbe.httpGet | nindent 12 }}
-          {{- else if .Values.deployment.livenessProbe.tcpSocket }}
-          tcpSocket:
-            {{- toYaml .Values.deployment.livenessProbe.tcpSocket | nindent 12 }}
-          {{- else if .Values.deployment.livenessProbe.grpc }}
-          grpc:
-            {{- toYaml .Values.deployment.livenessProbe.grpc | nindent 12 }}
-          {{- end }}
-        {{- end }}
-        {{- if .Values.deployment.readinessProbe.enabled }}
-        readinessProbe:
-          failureThreshold: {{ .Values.deployment.readinessProbe.failureThreshold }}
-          periodSeconds: {{ .Values.deployment.readinessProbe.periodSeconds }}
-          successThreshold: {{ .Values.deployment.readinessProbe.successThreshold }}
-          timeoutSeconds: {{ .Values.deployment.readinessProbe.timeoutSeconds }}
-          initialDelaySeconds: {{ .Values.deployment.readinessProbe.initialDelaySeconds }}
-          {{- if .Values.deployment.readinessProbe.exec }}
-          exec:
-            {{- toYaml .Values.deployment.readinessProbe.exec | nindent 12 }}
-          {{- else if .Values.deployment.readinessProbe.httpGet }}
-          httpGet:
-            {{- toYaml .Values.deployment.readinessProbe.httpGet | nindent 12 }}
-          {{- else if .Values.deployment.readinessProbe.tcpSocket }}
-          tcpSocket:
-            {{- toYaml .Values.deployment.readinessProbe.tcpSocket | nindent 12 }}
-          {{- else if .Values.deployment.readinessProbe.grpc }}
-          grpc:
-            {{- toYaml .Values.deployment.readinessProbe.grpc | nindent 12 }}
-          {{- end }}
-        {{- end }}
-      {{- if or (.Values.deployment.volumeMounts) (and (eq .Values.persistence.enabled true) (eq .Values.persistence.mountPVC true) )}}
-        volumeMounts:
-        {{- if (eq .Values.persistence.mountPVC true) }}
-        - mountPath: {{ .Values.persistence.mountPath }}
-          name: {{ template "application.name" . }}-data
-        {{- end }}
-        {{- if .Values.deployment.volumeMounts }}
-        {{- range $key, $value := .Values.deployment.volumeMounts }}
-        - name: {{ $key }}
-{{  include "application.tplvalues.render" ( dict "value" $value "context" $ ) | indent 10 }}
-        {{- end }}
-        {{- end }}
-      {{- end }}
-        {{- with .Values.deployment.resources }}
-        resources:
-          {{- toYaml . | nindent 10 }}
-        {{- end }}
-        {{- if .Values.deployment.containerSecurityContext }}
-        securityContext:
-{{ toYaml .Values.deployment.containerSecurityContext | indent 10 }}
-        {{- end }}
-        {{- if .Values.deployment.additionalContainers }}
-{{ toYaml .Values.deployment.additionalContainers | indent 6 }}
-        {{- end }}
-        {{- if .Values.deployment.securityContext }}
-      securityContext:
-{{ toYaml .Values.deployment.securityContext | indent 8 }}
-          {{- end }}
-      {{- if .Values.deployment.dnsConfig }}
-      dnsConfig:
-{{ toYaml .Values.deployment.dnsConfig | indent 8 }}
-          {{- end }}
-      {{- if .Values.deployment.dnsPolicy }}
-      dnsPolicy: {{ .Values.deployment.dnsPolicy }}
-      {{- end }}
-      {{- if or (.Values.deployment.volumes) (and (eq .Values.persistence.enabled true) (eq .Values.persistence.mountPVC true) )}}
-      volumes:
-        {{- if (eq .Values.persistence.mountPVC true) }}
-      - name: {{ template "application.name" . }}-data
-        persistentVolumeClaim:
-          {{- if .Values.persistence.name }}
-          claimName: {{ .Values.persistence.name }}
-          {{- else }}
-          claimName: {{ template "application.name" . }}-data
-          {{- end }}
-        {{- end }}
-        {{- if .Values.deployment.volumes }}
-        {{- range $key, $value := .Values.deployment.volumes }}
-      - name: {{ $key }}
-{{ include "application.tplvalues.render" ( dict "value" $value "context" $ ) | indent 8 }}
-        {{- end }}
-        {{- end }}
-      {{- end }}
-      {{- if .Values.rbac.serviceAccount.enabled }}
-      {{- if .Values.rbac.serviceAccount.name }}
-      serviceAccountName: {{ .Values.rbac.serviceAccount.name }}
-      {{- else }}
-      serviceAccountName: {{ template "application.name" $ }}
-      {{- end }}
-      {{- end }}
-      automountServiceAccountToken: {{ .Values.deployment.automountServiceAccountToken }}
-      {{- if .Values.deployment.hostNetwork }}
-      hostNetwork: {{ .Values.deployment.hostNetwork }}
-      {{- end }}
-      terminationGracePeriodSeconds: {{ .Values.deployment.terminationGracePeriodSeconds }}
-      {{- if not (kindIs "invalid" .Values.deployment.minReadySeconds) }}
-      minReadySeconds: {{ .Values.deployment.minReadySeconds }}
-      {{- end }}
+      {{- include "application.podSpec" (dict "pod" $w "name" $name "volumeMounts" $mounts "volumeDevices" $devices "volumes" $volumes "context" .) | nindent 6 }}
 {{- end }}

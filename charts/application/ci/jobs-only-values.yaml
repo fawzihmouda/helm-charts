@@ -1,0 +1,45 @@
+# Batch-only release: no long-running workload, so no Service, PDB or HPA.
+fullnameOverride: batch
+
+workload:
+  enabled: false
+
+serviceAccount:
+  create: true
+
+persistence:
+  enabled: true
+  storageSize: 1Gi
+
+job:
+  enabled: true
+  jobs:
+    seed:
+      image:
+        repository: busybox
+        tag: "1.37"
+      command: ["sh", "-c", "echo seeded > /data/seed && cat /data/seed"]
+      # busybox runs as root by default, which the default security context rejects.
+      securityContext:
+        runAsUser: 1000
+        fsGroup: 1000
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: batch-data
+      volumeMounts:
+        - name: data
+          mountPath: /data
+
+cronJob:
+  enabled: true
+  jobs:
+    report:
+      schedule: "0 3 * * *"
+      suspend: true
+      image:
+        repository: busybox
+        tag: "1.37"
+      command: ["sh", "-c", "date"]
+      securityContext:
+        runAsUser: 1000

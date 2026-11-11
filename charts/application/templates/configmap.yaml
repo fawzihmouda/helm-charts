@@ -1,21 +1,24 @@
-{{- if (.Values.configMap).enabled }}
-{{- range $nameSuffix, $data := .Values.configMap.files }}
+{{- if .Values.configMap.enabled }}
+{{- range $nameSuffix, $configMap := .Values.configMap.items }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ template "application.name" $ }}-{{ $nameSuffix }}
-  namespace: {{ template "application.namespace" $ }}
+  name: {{ printf "%s-%s" (include "application.fullname" $) $nameSuffix | quote }}
+  namespace: {{ include "application.namespace" $ | quote }}
   labels:
-  {{- include "application.labels" $ | nindent 4 }}
-{{- if $.Values.configMap.additionalLabels }}
-{{ toYaml $.Values.configMap.additionalLabels | indent 4 }}
-{{- end }}
-{{- if $.Values.configMap.annotations }}
+    {{- include "application.labelsWith" (dict "context" $ "extra" (list $.Values.configMap.additionalLabels)) | nindent 4 }}
+  {{- with $.Values.configMap.annotations }}
   annotations:
-{{ toYaml $.Values.configMap.annotations | indent 4 }}
-{{- end }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- include "application.fields" (dict "from" $configMap "indent" 0 "names" (list "immutable" "binaryData")) }}
+{{- with $configMap.data }}
 data:
-{{ include "application.tplvalues.render" ( dict "value" $data "context" $ ) | indent 2 }}
+  {{- range $key, $value := . }}
+  {{- /* Helm reads numbers as floats; toJson keeps 10485760 instead of 1.048576e+07. */}}
+  {{ $key | quote }}: {{ kindIs "string" $value | ternary (tpl (toString $value) $) (toJson $value) | quote }}
+  {{- end }}
+{{- end }}
 {{- end }}
 {{- end }}

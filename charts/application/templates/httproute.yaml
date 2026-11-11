@@ -1,26 +1,45 @@
-{{- if and .Values.httpRoute .Values.httpRoute.enabled -}}
-{{- if not (.Capabilities.APIVersions.Has "gateway.networking.k8s.io/v1") }}
-  {{- fail "There is no APIGateway resource definition in the target cluster!" }}
+{{- if .Values.httpRoute.enabled }}
+{{- $r := .Values.httpRoute }}
+{{- if not (or $r.parentRefs $r.useDefaultGateways) }}
+{{- fail "httpRoute needs parentRefs or useDefaultGateways" }}
 {{- end }}
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: {{ template "application.name" . }}
-  namespace: {{ include "application.namespace" . }}
+  name: {{ include "application.fullname" . | quote }}
+  namespace: {{ include "application.namespace" . | quote }}
   labels:
-    {{- include "application.labels" $ | nindent 4 }}
-    {{- if .Values.httpRoute.additionalLabels }}
-      {{ toYaml .Values.httpRoute.additionalLabels | nindent 4 }}
-    {{- end }}
-  {{- if .Values.httpRoute.annotations }}
-  annotations: {{- toYaml .Values.httpRoute.annotations | nindent 4 }}
+    {{- include "application.labelsWith" (dict "context" . "extra" (list $r.additionalLabels)) | nindent 4 }}
+  {{- with $r.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  parentRefs: {{- include "application.tplvalues.render" ( dict "value" .Values.httpRoute.parentRefs "context" $ ) | nindent 4 }}
-  {{- if .Values.httpRoute.useDefaultGateways }}
-  useDefaultGateways: {{ .Values.httpRoute.useDefaultGateways }}
+  {{- with $r.parentRefs }}
+  parentRefs:
+    {{- include "application.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
   {{- end }}
-  hostnames: {{- include "application.tplvalues.render" ( dict "value" .Values.httpRoute.hostnames "context" $ ) | nindent 4 }}
-  rules: {{- include "application.tplvalues.render" ( dict "value" .Values.httpRoute.rules "context" $ ) | nindent 4 }}
+  {{- with $r.useDefaultGateways }}
+  useDefaultGateways: {{ . }}
+  {{- end }}
+  {{- with $r.hostnames }}
+  hostnames:
+    {{- include "application.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+  {{- end }}
+  rules:
+  {{- with $r.rules }}
+    {{- include "application.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+  {{- else }}
+    {{- if not (and .Values.service.enabled .Values.workload.enabled) }}
+    {{- fail "httpRoute.rules is required when the chart creates no Service" }}
+    {{- end }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ include "application.fullname" . | quote }}
+          port: {{ (first .Values.service.ports).port }}
+  {{- end }}
 {{- end }}

@@ -1,28 +1,43 @@
-{{- define "application.defaultExtraObject" -}}
-metadata:
-  labels: {{- include "application.labels" $ | nindent 4 }}
-{{- end }}
-{{- $defaultExtraObject := fromYaml (include "application.defaultExtraObject" .) -}}
-
-{{- $extraObjects := .Values.extraObjects | default (list) -}}
-
-{{- if kindIs "map" $extraObjects -}}
-  {{- $extraObjects = values $extraObjects -}}
+{{- /* Every extra object gets the common labels, and namespaceOverride when it is set. */}}
+{{- $defaults := dict "metadata" (dict "labels" (include "application.labels" . | fromYaml)) -}}
+{{- with .Values.namespaceOverride -}}
+  {{- $_ := set $defaults.metadata "namespace" . -}}
 {{- end -}}
 
-{{- $extraObject := dict -}}
-{{- range $extraObjects }}
-  {{- if kindIs "map" . }}
-    {{- $extraObject = tpl (toYaml .) $ | nindent 0 }}
-  {{- else if kindIs "string" . }}
-    {{- $extraObject = tpl . $ | nindent 0 }}
+{{- $extraObjects := .Values.extraObjects | default (list) -}}
+{{- /* Map keys only name entries; sort them so the manifest order is stable. */}}
+{{- if kindIs "map" $extraObjects -}}
+  {{- $sorted := list -}}
+  {{- range $key := keys $extraObjects | sortAlpha -}}
+    {{- $sorted = append $sorted (get $extraObjects $key) -}}
+  {{- end -}}
+  {{- $extraObjects = $sorted -}}
+{{- end -}}
+
+{{- range $index, $entry := $extraObjects }}
+  {{- /* A null entry is one whose body was commented out, so skip it. */}}
+  {{- if not (kindIs "invalid" $entry) }}
+  {{- $documents := list }}
+  {{- if kindIs "map" $entry }}
+    {{- $documents = list (include "application.tplvalues.render" (dict "value" $entry "context" $)) }}
+  {{- else if kindIs "string" $entry }}
+    {{- /* A separator line may end in a comment. */}}
+    {{- $documents = regexSplit "(?m)^---[ \t]*(#.*)?\r?\n" (tpl $entry $) -1 }}
+  {{- else }}
+    {{- fail (printf "extraObjects entry %d must be an object or a string" $index) }}
   {{- end }}
-  {{- $documents := regexSplit "(?m)^---[ \t]*\r?\n" $extraObject -1 }}
-  {{- range $documents }}
-    {{- $parsedObject := fromYaml . }}
-    {{- if and $parsedObject (hasKey $parsedObject "kind") }}
----
-{{- toYaml (merge $parsedObject $defaultExtraObject) | nindent 0 -}}
+  {{- range $document := $documents }}
+    {{- $object := fromYaml $document }}
+    {{- if hasKey $object "Error" }}
+      {{- fail (printf "extraObjects entry %d is not valid YAML: %s" $index $object.Error) }}
     {{- end }}
+    {{- if $object }}
+    {{- if not (hasKey $object "kind") }}
+      {{- fail (printf "extraObjects entry %d has a document without kind" $index) }}
+    {{- end }}
+---
+{{ toYaml (merge $object (deepCopy $defaults)) }}
+    {{- end }}
+  {{- end }}
   {{- end }}
 {{- end }}

@@ -1,0 +1,120 @@
+suite: extraObjects
+templates:
+  - templates/extraobjects.yaml
+set:
+  workload.image.repository: nginx
+tests:
+  - it: renders map entries in key order
+    set:
+      extraObjects:
+        b: {apiVersion: v1, kind: ConfigMap, metadata: {name: b}}
+        a: {apiVersion: v1, kind: ConfigMap, metadata: {name: a}}
+    asserts:
+      - hasDocuments:
+          count: 2
+      - equal:
+          path: metadata.name
+          value: a
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: b
+        documentIndex: 1
+
+  - it: skips a null entry instead of repeating the previous one
+    set:
+      extraObjects:
+        - {apiVersion: v1, kind: ConfigMap, metadata: {name: one}}
+        - null
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: renders every document of a multi-document string
+    set:
+      extraObjects:
+        - |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: first
+          ---
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: second
+    asserts:
+      - hasDocuments:
+          count: 2
+
+  - it: fails on a document without kind
+    set:
+      extraObjects:
+        - {apiVersion: v1, Kind: ConfigMap, metadata: {name: x}}
+    asserts:
+      - failedTemplate:
+          errorPattern: extraObjects entry 0 has a document without kind
+
+  - it: fails on invalid YAML
+    set:
+      extraObjects:
+        - |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: x
+           labels: {}
+    asserts:
+      - failedTemplate:
+          errorPattern: extraObjects entry 0 is not valid YAML
+
+  - it: keeps escaped template syntax for other tools
+    set:
+      extraObjects:
+        - apiVersion: monitoring.coreos.com/v1
+          kind: PrometheusRule
+          metadata:
+            name: rules
+          spec:
+            groups:
+              - name: g
+                rules:
+                  - alert: Down
+                    expr: up == 0
+                    annotations:
+                      summary: '{{`{{ $labels.instance }}`}} is down'
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[0].annotations.summary
+          value: "{{ $labels.instance }} is down"
+
+  - it: splits documents at a separator that carries a comment
+    set:
+      extraObjects:
+        - |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: first
+          --- # second
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: second
+    asserts:
+      - hasDocuments:
+          count: 2
+
+  - it: keeps a templated field a string when it renders to YAML syntax
+    set:
+      extraObjects:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: one
+          data:
+            pair: '{{ print "a: b" }}'
+    asserts:
+      - equal:
+          path: data.pair
+          value: "a: b"
