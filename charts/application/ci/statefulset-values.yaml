@@ -1,0 +1,27 @@
+# StatefulSet with one PVC per pod. The chart adds the headless Service.
+workload:
+  kind: StatefulSet
+  replicas: 2
+  podManagementPolicy: Parallel
+  image:
+    repository: ghcr.io/stefanprodan/podinfo
+    tag: "6.17.0"
+  command: ["./podinfo", "--port=8080", "--data-path=/data"]
+  ports:
+    - containerPort: 8080
+      name: http
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+  securityContext:
+    runAsUser: 1000
+    fsGroup: 1000
+
+persistence:
+  enabled: true
+  mountPVC: true
+  storageSize: 1Gi
+
+pdb:
+  enabled: true

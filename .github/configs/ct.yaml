@@ -1,0 +1,11 @@
+# chart-testing settings for `ct lint` and `ct install`.
+remote: origin
+target-branch: main
+chart-dirs:
+  - charts
+additional-commands:
+  - helm unittest --strict --file 'unittests/**/*.yaml' {{ .Path }}
+helm-extra-args: --timeout 600s
+validate-maintainers: false
+# A pull request that changes a chart must raise its version above the one on main.
+check-version-increment: true

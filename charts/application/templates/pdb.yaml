@@ -1,21 +1,27 @@
-{{- if or .Values.pdb.minAvailable .Values.pdb.maxUnavailable | and .Values.pdb.enabled }}
----
-{{- if .Capabilities.APIVersions.Has "policy/v1/PodDisruptionBudget" }}
-apiVersion: policy/v1
-{{- else }}
-apiVersion: policy/v1beta1
+{{- if and .Values.pdb.enabled .Values.workload.enabled }}
+{{- if eq (include "application.workloadKind" .) "DaemonSet" }}
+{{- fail "pdb.enabled can't be used with workload.kind DaemonSet: the PDB can't compute disruptions for it and blocks every eviction" }}
 {{- end }}
+---
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
+  name: {{ include "application.fullname" . | quote }}
+  namespace: {{ include "application.namespace" . | quote }}
   labels:
-    {{- include "application.labels" $ | nindent 4 }}
-  name: {{ template "application.name" . }}
-  namespace: {{ include "application.namespace" . }}
+    {{- include "application.labelsWith" (dict "context" . "extra" (list .Values.pdb.labels)) | nindent 4 }}
+  {{- with .Values.pdb.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
-  {{- if .Values.pdb.minAvailable }}
-  minAvailable: {{ .Values.pdb.minAvailable }}
-  {{- else }}
-  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  {{- if not (kindIs "invalid" .Values.pdb.minAvailable) }}
+  minAvailable: {{ toJson .Values.pdb.minAvailable }}
+  {{- else if not (kindIs "invalid" .Values.pdb.maxUnavailable) }}
+  maxUnavailable: {{ toJson .Values.pdb.maxUnavailable }}
+  {{- end }}
+  {{- with .Values.pdb.unhealthyPodEvictionPolicy }}
+  unhealthyPodEvictionPolicy: {{ . }}
   {{- end }}
   selector:
     matchLabels:

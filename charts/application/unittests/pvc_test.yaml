@@ -1,0 +1,25 @@
+suite: test pvc
+templates:
+  - pvc.yaml
+release:
+  name: demo
+set:
+  fullnameOverride: demo
+  workload.image.repository: nginx
+tests:
+  - it: doesn't create a shared PVC for a StatefulSet
+    set:
+      persistence.enabled: true
+      workload.kind: StatefulSet
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: disables dynamic provisioning for an empty storage class
+    set:
+      persistence.enabled: true
+      persistence.storageClass: ""
+    asserts:
+      - equal:
+          path: spec.storageClassName
+          value: ""

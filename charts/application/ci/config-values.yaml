@@ -1,0 +1,50 @@
+workload:
+  image:
+    repository: ghcr.io/stefanprodan/podinfo
+    tag: "6.17.0"
+  # podinfo sets CMD, not ENTRYPOINT, so the command must name the binary.
+  command: ["./podinfo", "--port=8080"]
+  # podinfo's image user is a name, so runAsNonRoot needs a UID.
+  securityContext:
+    runAsUser: 1000
+  envFrom:
+    - configMapRef:
+        name: '{{ include "application.fullname" . }}-settings'
+    - secretRef:
+        name: '{{ include "application.fullname" . }}-credentials'
+  # A list keeps order, so GREETING can reference NAME.
+  env:
+    - name: NAME
+      value: world
+    - name: GREETING
+      value: "hello $(NAME)"
+  volumes:
+    config:
+      configMap:
+        name: '{{ include "application.fullname" . }}-files'
+  volumeMounts:
+    config:
+      mountPath: /etc/app
+      readOnly: true
+
+configMap:
+  enabled: true
+  items:
+    settings:
+      data:
+        LOG_FORMAT: json
+        MAX_BYTES: 10485760
+    files:
+      data:
+        app.conf: |
+          name = {{ include "application.fullname" . }}
+
+secret:
+  enabled: true
+  items:
+    credentials:
+      data:
+        username: admin
+        port: 5432
+      stringData:
+        mode: test

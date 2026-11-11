@@ -1,0 +1,59 @@
+suite: test cronjob
+templates:
+  - cronjob.yaml
+release:
+  name: demo
+set:
+  fullnameOverride: demo
+  workload.image.repository: nginx
+  workload.image.tag: "1.0.0"
+  job.enabled: true
+  job.jobs.migrate:
+    image:
+      repository: busybox
+    command: ["sh", "-c", "echo hi"]
+  cronJob.enabled: true
+  cronJob.jobs.cleanup:
+    schedule: "0 * * * *"
+    timeZone: Australia/Sydney
+    startingDeadlineSeconds: 60
+    image:
+      repository: busybox
+    command: ["sh", "-c", "echo hi"]
+tests:
+  - it: renders the CronJob command as a list
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].command
+          value: ["sh", "-c", "echo hi"]
+
+  - it: puts startingDeadlineSeconds on the CronJob spec only
+    asserts:
+      - equal:
+          path: spec.startingDeadlineSeconds
+          value: 60
+      - notExists:
+          path: spec.jobTemplate.spec.startingDeadlineSeconds
+      - equal:
+          path: spec.timeZone
+          value: Australia/Sydney
+
+  - it: gives cron job pods their own name label
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.metadata.labels["app.kubernetes.io/name"]
+          value: demo-cleanup
+
+  - it: renders suspend false so the chart can resume a CronJob
+    set:
+      cronJob.jobs.cleanup.suspend: false
+    asserts:
+      - equal:
+          path: spec.suspend
+          value: false
+
+  - it: labels the CronJob with the workload's name
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: demo-cleanup

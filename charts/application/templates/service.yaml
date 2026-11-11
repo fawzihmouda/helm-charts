@@ -1,42 +1,54 @@
-{{- if (.Values.service).enabled }}
+{{- if .Values.workload.enabled }}
+{{- $s := .Values.service }}
+{{- if $s.enabled }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ template "application.name" . }}
-  namespace: {{ template "application.namespace" $ }}
+  name: {{ include "application.fullname" . | quote }}
+  namespace: {{ include "application.namespace" . | quote }}
   labels:
-  {{- include "application.labels" $ | nindent 4 }}
-  {{- if .Values.service.additionalLabels }}
-    {{- toYaml .Values.service.additionalLabels | nindent 4 }}
-  {{- end }}
-  {{- if .Values.service.annotations }}
+    {{- include "application.labelsWith" (dict "context" . "extra" (list $s.labels)) | nindent 4 }}
+  {{- with $s.annotations }}
   annotations:
-    {{- include "application.tplvalues.render" ( dict "value" .Values.service.annotations  "context" $ ) | nindent 4 }}
-{{- end }}
+    {{- include "application.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+  {{- end }}
 spec:
-  type: {{ .Values.service.type }}
-{{- with .Values.service.clusterIP }}
-  clusterIP: {{ . }}
-{{- end }}
-{{- if eq .Values.service.type "LoadBalancer" }}
-  {{- with .Values.service.loadBalancerClass }}
-  loadBalancerClass: {{ . }}
+  type: {{ required "service.type is required" $s.type }}
+  {{- include "application.fields" (dict "from" $s "indent" 2 "names" (list
+    "clusterIP" "externalIPs" "internalTrafficPolicy" "ipFamilies"
+    "ipFamilyPolicy" "publishNotReadyAddresses" "sessionAffinity" "sessionAffinityConfig")) }}
+  {{- if ne $s.type "ClusterIP" }}
+  {{- include "application.fields" (dict "from" $s "indent" 2 "names" (list "externalTrafficPolicy")) }}
   {{- end }}
-  {{- with .Values.service.loadBalancerIP }}
-  loadBalancerIP: {{ . }}
-  {{- end }}
-  {{- with .Values.service.loadBalancerSourceRanges }}
-  loadBalancerSourceRanges:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-{{- end }}
-  {{- with .Values.service.externalIPs }}
-  externalIPs:
-    {{- toYaml . | nindent 4 }}
+  {{- if eq $s.type "LoadBalancer" }}
+  {{- include "application.fields" (dict "from" $s "indent" 2 "names" (list
+    "loadBalancerClass" "loadBalancerIP" "loadBalancerSourceRanges")) }}
   {{- end }}
   selector:
-{{ include "application.selectorLabels" . | indent 4 }}
+    {{- include "application.selectorLabels" . | nindent 4 }}
   ports:
-{{ toYaml .Values.service.ports | indent 4 }}
+    {{- toYaml (required "service.ports is required" $s.ports) | nindent 4 }}
+{{- end }}
+{{- if eq (include "application.workloadKind" .) "StatefulSet" }}
+{{- /* Governing Service of the StatefulSet: gives each pod a stable DNS name. */}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-headless" (include "application.fullname" .) | quote }}
+  namespace: {{ include "application.namespace" . | quote }}
+  labels:
+    {{- include "application.labelsWith" (dict "context" . "extra" (list $s.labels)) | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "application.selectorLabels" . | nindent 4 }}
+  ports:
+    {{- /* nodePort is not allowed on a headless Service. */}}
+    {{- range required "service.ports is required" $s.ports }}
+    - {{ omit . "nodePort" | toYaml | nindent 6 | trim }}
+    {{- end }}
+{{- end }}
 {{- end }}

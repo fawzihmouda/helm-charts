@@ -1,0 +1,113 @@
+suite: test extra-manifests
+templates:
+  - extra-manifests.yaml
+release:
+  name: demo
+set:
+  fullnameOverride: demo
+  workload.image.repository: nginx
+tests:
+  - it: renders a string extraObject that embeds the selector labels
+    set:
+      extraObjects:
+        - |
+          apiVersion: monitoring.coreos.com/v1
+          kind: ServiceMonitor
+          metadata:
+            name: {{ include "application.fullname" . }}
+          spec:
+            selector:
+              matchLabels:
+                {{- include "application.selectorLabels" . | nindent 8 }}
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: application
+            app.kubernetes.io/instance: demo
+
+  - it: renders an object entry through tpl and adds nothing to it
+    set:
+      extraObjects:
+        - apiVersion: monitoring.coreos.com/v1alpha1
+          kind: AlertmanagerConfig
+          metadata:
+            name: '{{ include "application.fullname" . }}'
+            labels:
+              alertmanagerConfig: workload
+    asserts:
+      - equal:
+          path: metadata.name
+          value: demo
+      - equal:
+          path: metadata.labels
+          value:
+            alertmanagerConfig: workload
+
+  - it: renders every document of a multi-document string
+    set:
+      extraObjects:
+        - |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: first
+          ---
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: second
+    asserts:
+      - hasDocuments:
+          count: 2
+
+  - it: keeps escaped template syntax for other tools
+    set:
+      extraObjects:
+        - apiVersion: monitoring.coreos.com/v1
+          kind: PrometheusRule
+          metadata:
+            name: rules
+          spec:
+            groups:
+              - name: g
+                rules:
+                  - alert: Down
+                    expr: up == 0
+                    annotations:
+                      summary: '{{`{{ $labels.instance }}`}} is down'
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[0].annotations.summary
+          value: "{{ $labels.instance }} is down"
+
+  - it: renders the documents after a separator that carries a comment
+    set:
+      extraObjects:
+        - |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: first
+          --- # second
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: second
+    asserts:
+      - hasDocuments:
+          count: 2
+
+  - it: keeps a templated field a string when it renders to YAML syntax
+    set:
+      extraObjects:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: one
+          data:
+            pair: '{{ print "a: b" }}'
+    asserts:
+      - equal:
+          path: data.pair
+          value: "a: b"

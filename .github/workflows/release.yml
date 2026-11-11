@@ -1,0 +1,46 @@
+name: Release
+on:
+  push:
+    branches:
+      - main
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # Publishes every chart whose version has no GitHub release yet, and updates
+  # index.yaml on the gh-pages branch. The release and its tag are named
+  # <chart>-<version>.
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      # Creates the GitHub release and pushes index.yaml to gh-pages.
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          # chart-releaser pushes index.yaml to gh-pages with these credentials.
+          persist-credentials: true
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.3.0
+
+      - name: Run chart-releaser
+        uses: helm/chart-releaser-action@92c6b97fa9f664492a2592e0d1d80bc6bf378957 # v1.9.0
+        with:
+          # Re-running the workflow for a version that is already released does nothing.
+          skip_existing: true
+        env:
+          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}

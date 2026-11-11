@@ -1,0 +1,638 @@
+suite: test workload
+templates:
+  - workload.yaml
+release:
+  name: demo
+set:
+  fullnameOverride: demo
+  workload.image.repository: nginx
+tests:
+  - it: names the workload after the release and the chart by default
+    set:
+      fullnameOverride: ""
+    asserts:
+      - equal:
+          path: metadata.name
+          value: demo-application
+
+  - it: uses the release name alone when it contains the chart name
+    release:
+      name: my-application
+    set:
+      fullnameOverride: ""
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-application
+
+  - it: uses nameOverride in the name and in the name label
+    set:
+      fullnameOverride: ""
+      nameOverride: web
+    asserts:
+      - equal:
+          path: metadata.name
+          value: demo-web
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: web
+            app.kubernetes.io/instance: demo
+
+  - it: selects pods by chart name and release, so two releases don't share pods
+    set:
+      fullnameOverride: web
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: application
+            app.kubernetes.io/instance: demo
+
+  - it: quotes numeric names in the name and the selector
+    release:
+      name: "1234"
+    set:
+      fullnameOverride: "1234"
+      nameOverride: "5678"
+    asserts:
+      - equal:
+          path: metadata.name
+          value: "1234"
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: "5678"
+            app.kubernetes.io/instance: "1234"
+
+  - it: keeps env and init container order when given as lists
+    set:
+      workload.env:
+        - name: Z_HOST
+          value: db
+        - name: A_URL
+          value: http://$(Z_HOST)
+      workload.initContainers:
+        - name: zz-first
+          image: busybox:1.37
+        - name: aa-second
+          image: busybox:1.37
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[0].name
+          value: Z_HOST
+      - equal:
+          path: spec.template.spec.containers[0].env[1].name
+          value: A_URL
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: zz-first
+      - equal:
+          path: spec.template.spec.initContainers[1].name
+          value: aa-second
+
+  - it: still accepts env as a map
+    set:
+      workload.env:
+        FOO:
+          value: bar
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FOO
+            value: bar
+
+  - it: renders envFrom through tpl
+    set:
+      workload.envFrom:
+        - secretRef:
+            name: '{{ include "application.fullname" . }}-db'
+            optional: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom
+          value:
+            - secretRef: {name: demo-db, optional: true}
+
+  - it: renders a probe as written
+    set:
+      workload.livenessProbe:
+        httpGet:
+          path: /healthz
+          port: 8080
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe
+          value:
+            httpGet:
+              path: /healthz
+              port: 8080
+
+  - it: renders no probe by default
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].livenessProbe
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe
+      - notExists:
+          path: spec.template.spec.containers[0].startupProbe
+
+  - it: uses Recreate for a Deployment that mounts a ReadWriteOnce PVC
+    set:
+      persistence.enabled: true
+      persistence.mountPVC: true
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: data
+            mountPath: /data
+
+  - it: mounts an existing claim instead of the chart's PVC
+    set:
+      persistence.enabled: true
+      persistence.mountPVC: true
+      persistence.existingClaim: shared
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            persistentVolumeClaim:
+              claimName: shared
+
+  - it: rejects a DaemonSet that shares a single-node PVC
+    set:
+      workload.kind: DaemonSet
+      persistence.enabled: true
+      persistence.mountPVC: true
+    asserts:
+      - failedTemplate:
+          errorPattern: can't be shared by DaemonSet pods
+
+  - it: rejects several pods on a ReadWriteOncePod PVC
+    set:
+      workload.replicas: 2
+      persistence.enabled: true
+      persistence.mountPVC: true
+      persistence.accessMode: ReadWriteOncePod
+    asserts:
+      - failedTemplate:
+          errorPattern: ReadWriteOncePod allows one pod
+
+  - it: leaves replicas to the HPA when autoscaling is enabled
+    set:
+      workload.replicas: 3
+      autoscaling.enabled: true
+    asserts:
+      - notExists:
+          path: spec.replicas
+
+  - it: renders zero replicas
+    set:
+      workload.replicas: 0
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 0
+
+  - it: renders a StatefulSet with a claim template and the headless Service
+    set:
+      workload.kind: StatefulSet
+      workload.strategy:
+        type: RollingUpdate
+      workload.persistentVolumeClaimRetentionPolicy:
+        whenDeleted: Delete
+      persistence.enabled: true
+      persistence.mountPVC: true
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: spec.serviceName
+          value: demo-headless
+      - equal:
+          path: spec.updateStrategy.type
+          value: RollingUpdate
+      - equal:
+          path: spec.persistentVolumeClaimRetentionPolicy.whenDeleted
+          value: Delete
+      - equal:
+          path: spec.volumeClaimTemplates[0].metadata.name
+          value: data
+      - notContains:
+          path: spec.template.spec.volumes
+          any: true
+          content:
+            name: data
+
+  - it: keeps StatefulSet claim template labels stable across image tags
+    set:
+      workload.kind: StatefulSet
+      workload.image.tag: "1.0.1"
+      persistence.enabled: true
+      persistence.mountPVC: true
+    asserts:
+      - equal:
+          path: spec.volumeClaimTemplates[0].metadata.labels
+          value:
+            app.kubernetes.io/name: application
+            app.kubernetes.io/instance: demo
+
+  - it: rejects a StatefulSet name longer than 52 characters
+    set:
+      workload.kind: StatefulSet
+      fullnameOverride: a-very-long-application-name-that-exceeds-the-limit-xyz
+    asserts:
+      - failedTemplate:
+          errorPattern: at most 52 characters
+
+  - it: renders a DaemonSet without replicas
+    set:
+      workload.kind: DaemonSet
+      workload.replicas: 3
+    asserts:
+      - isKind:
+          of: DaemonSet
+      - notExists:
+          path: spec.replicas
+
+  - it: rejects an unknown kind
+    set:
+      workload.kind: ReplicaSet
+    asserts:
+      - failedTemplate:
+          errorPattern: "/workload/kind': value must be one of"
+
+  - it: renders progressDeadlineSeconds for a Deployment only
+    set:
+      workload.progressDeadlineSeconds: 120
+    asserts:
+      - equal:
+          path: spec.progressDeadlineSeconds
+          value: 120
+
+  - it: uses the default service account when none is created or named
+    set:
+      serviceAccount.create: false
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: default
+
+  - it: uses the created service account by default
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: demo
+
+  - it: uses an existing service account
+    set:
+      serviceAccount.name: shared
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: shared
+
+  - it: renders the version label from a templated tag
+    set:
+      workload.image.tag: '{{ "1.2.3" }}'
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: 1.2.3
+
+  - it: keeps the chart label off the pods, so a chart upgrade alone doesn't restart them
+    asserts:
+      - exists:
+          path: metadata.labels["helm.sh/chart"]
+      - notExists:
+          path: spec.template.metadata.labels["helm.sh/chart"]
+
+  - it: restarts the pods when a chart ConfigMap or Secret changes
+    set:
+      configMap.enabled: true
+      configMap.items.settings.data.LOG_FORMAT: json
+    asserts:
+      - matchRegex:
+          path: spec.template.metadata.annotations["checksum/config"]
+          pattern: ^[0-9a-f]{64}$
+
+  - it: hashes ConfigMap values as rendered, so a change behind a template restarts the pods
+    set:
+      fullnameOverride: b
+      configMap.enabled: true
+      configMap.items.settings.data.NAME: "{{ .Values.fullnameOverride }}"
+    asserts:
+      # The checksum of the same ConfigMap rendered with fullnameOverride "a".
+      - notEqual:
+          path: spec.template.metadata.annotations["checksum/config"]
+          value: c3993f4216677c309157df5f121b576fa23fa23f7474675d247f7e02bec3817c
+      - equal:
+          path: spec.template.metadata.annotations["checksum/config"]
+          value: bbfc6f8f8060db5514a7fd9a1284c3b9e0060b77fb75bb972bd53a808f775041
+
+  - it: adds no checksum when the chart creates no ConfigMap or Secret
+    set:
+      configMap.items.settings.data.LOG_FORMAT: json
+    asserts:
+      - notExists:
+          path: spec.template.metadata.annotations
+
+  - it: mounts a writable /tmp by default
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: writable-tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: writable-tmp
+            emptyDir: {}
+
+  - it: skips the default /tmp when the user already mounts /tmp
+    set:
+      workload.volumes:
+        scratch:
+          emptyDir: {}
+      workload.volumeMounts:
+        scratch:
+          mountPath: /tmp
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.containers[0].volumeMounts
+          count: 1
+      - lengthEqual:
+          path: spec.template.spec.volumes
+          count: 1
+
+  - it: keeps the default /tmp when a user volume named tmp is mounted elsewhere
+    set:
+      workload.volumes:
+        tmp:
+          emptyDir: {}
+      workload.volumeMounts:
+        tmp:
+          mountPath: /var/tmp
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.volumes
+          count: 2
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: writable-tmp
+            mountPath: /tmp
+
+  - it: gives init and additional containers the default security context unless they set one
+    set:
+      workload.initContainers:
+        - name: init
+          image: busybox:1.37
+      workload.extraContainers:
+        sidecar:
+          image: busybox:1.37
+          securityContext:
+            runAsUser: 0
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[1].name
+          value: sidecar
+      - equal:
+          path: spec.template.spec.containers[1].securityContext
+          value:
+            runAsUser: 0
+      - contains:
+          path: spec.template.spec.initContainers[0].volumeMounts
+          content:
+            name: writable-tmp
+            mountPath: /tmp
+      - notExists:
+          path: spec.template.spec.containers[1].volumeMounts
+
+  - it: renders large integers as written
+    set:
+      # A float, because that is how Helm reads every number in a values file.
+      workload.terminationGracePeriodSeconds: 1209600.0
+    asserts:
+      - isType:
+          path: spec.template.spec.terminationGracePeriodSeconds
+          type: int
+      - equal:
+          path: spec.template.spec.terminationGracePeriodSeconds
+          value: 1209600
+
+  - it: renders the optional pod fields
+    set:
+      workload.workingDir: /app
+      workload.hostPID: true
+      workload.shareProcessNamespace: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].workingDir
+          value: /app
+      - equal:
+          path: spec.template.spec.hostPID
+          value: true
+      - equal:
+          path: spec.template.spec.shareProcessNamespace
+          value: true
+
+  - it: renders the default RollingUpdate settings so Helm owns them
+    asserts:
+      - equal:
+          path: spec.strategy
+          value:
+            type: RollingUpdate
+            rollingUpdate:
+              maxSurge: 25%
+              maxUnavailable: 25%
+
+  - it: keeps a maxSurge of 0 and fills in the other RollingUpdate field
+    set:
+      workload.strategy.rollingUpdate.maxSurge: 0
+    asserts:
+      - equal:
+          path: spec.strategy
+          value:
+            type: RollingUpdate
+            rollingUpdate:
+              maxSurge: 0
+              maxUnavailable: 25%
+
+  - it: renders no rollingUpdate with another strategy type, so the type can change on upgrade
+    set:
+      workload.strategy.type: Recreate
+    asserts:
+      - equal:
+          path: spec.strategy
+          value:
+            type: Recreate
+
+  - it: renders the StatefulSet RollingUpdate defaults so Helm owns them
+    set:
+      workload.kind: StatefulSet
+      workload.strategy.rollingUpdate.partition: 1
+    asserts:
+      - equal:
+          path: spec.updateStrategy
+          value:
+            type: RollingUpdate
+            rollingUpdate:
+              partition: 1
+              maxUnavailable: 1
+
+  - it: renders the DaemonSet RollingUpdate defaults so Helm owns them
+    set:
+      workload.kind: DaemonSet
+    asserts:
+      - equal:
+          path: spec.updateStrategy
+          value:
+            type: RollingUpdate
+            rollingUpdate:
+              maxSurge: 0
+              maxUnavailable: 1
+
+  - it: renders only the type for OnDelete
+    set:
+      workload.kind: StatefulSet
+      workload.strategy.type: OnDelete
+    asserts:
+      - equal:
+          path: spec.updateStrategy
+          value:
+            type: OnDelete
+
+  - it: lets additionalLabels override chart labels but not selector labels
+    set:
+      additionalLabels:
+        app.kubernetes.io/part-of: shop-suite
+        app.kubernetes.io/name: hijacked
+      workload.podLabels:
+        app.kubernetes.io/instance: hijacked
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/part-of"]
+          value: shop-suite
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: application
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/instance"]
+          value: demo
+
+  - it: keeps a templated value a string when it renders to YAML syntax
+    set:
+      workload.env:
+        - name: PAIR
+          value: '{{ print "a: b" }}'
+        - name: HASH
+          value: "x #y"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[0].value
+          value: "a: b"
+      - equal:
+          path: spec.template.spec.containers[0].env[1].value
+          value: "x #y"
+
+  - it: skips a null list entry
+    set:
+      workload.env:
+        - name: A
+          value: x
+        - null
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.containers[0].env
+          count: 1
+
+  - it: uses the map key as the name, over a name inside the entry
+    set:
+      workload.env:
+        A:
+          name: other
+          value: x
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[0].name
+          value: A
+
+  - it: renders imagePullSecrets through tpl
+    set:
+      workload.imagePullSecrets:
+        - name: "{{ .Release.Name }}-pull"
+    asserts:
+      - equal:
+          path: spec.template.spec.imagePullSecrets[0].name
+          value: demo-pull
+
+  - it: trims the version label so it starts and ends with a letter or a digit
+    set:
+      workload.image.tag: "_1.0."
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: "1.0"
+
+  - it: quotes a numeric namespace
+    set:
+      namespaceOverride: "123"
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: "123"
+
+  - it: names the data volume "data", so a long release name can't pass 63 characters
+    set:
+      fullnameOverride: a-release-name-that-is-sixty-characters-long-for-this-test-x
+      persistence.enabled: true
+      persistence.mountPVC: true
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[0].name
+          value: data
+
+  - it: attaches a Block volume as a device, not a mount
+    set:
+      persistence.enabled: true
+      persistence.mountPVC: true
+      persistence.volumeMode: Block
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].volumeDevices
+          value:
+            - name: data
+              devicePath: /data
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          any: true
+          content:
+            name: data
+
+  - it: renders with configMap.enabled and secret.enabled set to null
+    set:
+      configMap.enabled: null
+      secret.enabled: null
+    asserts:
+      - notExists:
+          path: spec.template.metadata.annotations
+
+  - it: requires persistence.storageSize for a claim template
+    set:
+      workload.kind: StatefulSet
+      persistence.enabled: true
+      persistence.storageSize: ""
+    asserts:
+      - failedTemplate:
+          errorMessage: persistence.storageSize is required

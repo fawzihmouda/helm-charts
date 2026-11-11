@@ -1,0 +1,122 @@
+{{- if .Values.workload.enabled }}
+{{- $kind := include "application.workloadKind" . }}
+{{- $name := include "application.fullname" . }}
+{{- $w := .Values.workload }}
+{{- $p := .Values.persistence }}
+{{- $mountPVC := and $p.enabled $p.mountPVC }}
+{{- /* A StatefulSet gets one PVC per pod from a claim template instead of the shared PVC. */}}
+{{- $claimTemplate := and $p.enabled (eq $kind "StatefulSet") (not $p.existingClaim) }}
+{{- /* The chart's own PVC, shared by every pod. An existing claim's access mode is unknown. */}}
+{{- $sharedPVC := and $mountPVC (not $claimTemplate) (not $p.existingClaim) }}
+{{- $manyPods := or .Values.autoscaling.enabled (gt (int $w.replicas) 1) }}
+{{- if and (eq $kind "StatefulSet") (gt (len $name) 52) }}
+{{- fail "A StatefulSet name must be at most 52 characters, so its controller-revision-hash label fits in 63" }}
+{{- end }}
+{{- if and $sharedPVC (eq $kind "DaemonSet") (has $p.accessMode (list "ReadWriteOnce" "ReadWriteOncePod")) }}
+{{- fail (printf "persistence.accessMode %s can't be shared by DaemonSet pods on different nodes: use ReadWriteMany" $p.accessMode) }}
+{{- end }}
+{{- if and $sharedPVC $manyPods (eq $p.accessMode "ReadWriteOncePod") }}
+{{- fail "persistence.accessMode ReadWriteOncePod allows one pod: use one replica without autoscaling, or workload.kind StatefulSet" }}
+{{- end }}
+{{- $strategy := deepCopy (default dict $w.strategy) }}
+{{- if not $strategy.type }}
+{{- /* A RollingUpdate can't start the new pod while the old pod holds a single-node volume. */}}
+{{- $recreate := and (eq $kind "Deployment") $mountPVC (has $p.accessMode (list "ReadWriteOnce" "ReadWriteOncePod")) (not $strategy.rollingUpdate) }}
+{{- $_ := set $strategy "type" (ternary "Recreate" "RollingUpdate" $recreate) }}
+{{- end }}
+{{- if eq $strategy.type "RollingUpdate" }}
+{{- /* Kubernetes fills in every rollingUpdate field and rejects the block with another type.
+Rendering its defaults makes Helm own the fields, so Helm removes them when the type changes. */}}
+{{- $defaults := get (dict
+  "Deployment" (dict "maxSurge" "25%" "maxUnavailable" "25%")
+  "StatefulSet" (dict "partition" 0 "maxUnavailable" 1)
+  "DaemonSet" (dict "maxSurge" 0 "maxUnavailable" 1)) $kind }}
+{{- $rollingUpdate := deepCopy (default dict $strategy.rollingUpdate) }}
+{{- range $key, $value := $defaults }}
+{{- if not (hasKey $rollingUpdate $key) }}
+{{- $_ := set $rollingUpdate $key $value }}
+{{- end }}
+{{- end }}
+{{- $_ := set $strategy "rollingUpdate" $rollingUpdate }}
+{{- end }}
+{{- /* The pod's volume is named "data": a name built from the release name could pass 63 characters. */}}
+{{- $mounts := list }}
+{{- $devices := list }}
+{{- $volumes := list }}
+{{- if $mountPVC }}
+{{- if eq $p.volumeMode "Block" }}
+{{- $devices = list (dict "name" "data" "devicePath" $p.mountPath) }}
+{{- else }}
+{{- $mounts = list (dict "name" "data" "mountPath" $p.mountPath) }}
+{{- end }}
+{{- if not $claimTemplate }}
+{{- $volumes = list (dict "name" "data" "persistentVolumeClaim" (dict "claimName" (include "application.pvcName" .))) }}
+{{- end }}
+{{- end }}
+{{- /* Roll the pods when the chart's ConfigMaps or Secrets change. ConfigMaps are hashed as rendered by tpl. */}}
+{{- $podAnnotations := dict }}
+{{- $configMaps := and .Values.configMap.enabled .Values.configMap.items }}
+{{- $secrets := and .Values.secret.enabled .Values.secret.items }}
+{{- if or $configMaps $secrets }}
+{{- $rendered := include "application.tplvalues.render" (dict "value" $configMaps "context" .) }}
+{{- $_ := set $podAnnotations "checksum/config" (print $rendered (toJson $secrets) | sha256sum) }}
+{{- end }}
+{{- $podAnnotations = merge (deepCopy (default dict $w.podAnnotations)) $podAnnotations }}
+---
+apiVersion: apps/v1
+kind: {{ $kind }}
+metadata:
+  name: {{ $name | quote }}
+  namespace: {{ include "application.namespace" . | quote }}
+  labels:
+    {{- include "application.labelsWith" (dict "context" . "extra" (list $w.labels)) | nindent 4 }}
+  {{- with $w.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if and (ne $kind "DaemonSet") (not .Values.autoscaling.enabled) }}
+  {{- include "application.fields" (dict "from" $w "indent" 2 "names" (list "replicas")) }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "application.selectorLabels" . | nindent 6 }}
+  {{- with $strategy }}
+  {{ eq $kind "Deployment" | ternary "strategy" "updateStrategy" }}:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- include "application.fields" (dict "from" $w "indent" 2 "names" (list "revisionHistoryLimit" "minReadySeconds")) }}
+  {{- if eq $kind "Deployment" }}
+  {{- include "application.fields" (dict "from" $w "indent" 2 "names" (list "progressDeadlineSeconds")) }}
+  {{- end }}
+  {{- if eq $kind "StatefulSet" }}
+  {{- /* serviceName and volumeClaimTemplates are immutable, so they use only stable values. */}}
+  serviceName: {{ printf "%s-headless" $name | quote }}
+  {{- include "application.fields" (dict "from" $w "indent" 2 "names" (list "podManagementPolicy" "persistentVolumeClaimRetentionPolicy")) }}
+  {{- if $claimTemplate }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+      labels:
+        {{- merge (include "application.selectorLabels" . | fromYaml) (default dict $p.labels) | toYaml | nindent 8 }}
+      {{- with $p.annotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "application.pvcSpec" . | nindent 6 }}
+  {{- end }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- /* No helm.sh/chart label, so a chart upgrade alone doesn't restart the pods. */}}
+        {{- $labels := include "application.labelsWith" (dict "context" . "extra" (list $w.podLabels (include "application.selectorLabels" . | fromYaml))) | fromYaml }}
+        {{- omit $labels "helm.sh/chart" | toYaml | nindent 8 }}
+      {{- with $podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "application.podSpec" (dict "pod" $w "name" $name "volumeMounts" $mounts "volumeDevices" $devices "volumes" $volumes "context" .) | nindent 6 }}
+{{- end }}

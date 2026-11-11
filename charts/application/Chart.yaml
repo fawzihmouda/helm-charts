@@ -1,9 +1,6 @@
 apiVersion: v2
 name: application
-description: Generic helm chart for all kind of applications
-
+description: Generic Helm chart for Deployment, StatefulSet, DaemonSet, Job and CronJob
 type: application
-
-# Helm chart Version
-
 version: 1.0.0
+kubeVersion: ">=1.30.0-0"
