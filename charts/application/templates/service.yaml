@@ -8,7 +8,7 @@ metadata:
   name: {{ include "application.fullname" . | quote }}
   namespace: {{ include "application.namespace" . | quote }}
   labels:
-    {{- include "application.labelsWith" (dict "context" . "extra" (list $s.additionalLabels)) | nindent 4 }}
+    {{- include "application.labelsWith" (dict "context" . "extra" (list $s.labels)) | nindent 4 }}
   {{- with $s.annotations }}
   annotations:
     {{- include "application.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
@@ -39,7 +39,7 @@ metadata:
   name: {{ printf "%s-headless" (include "application.fullname" .) | quote }}
   namespace: {{ include "application.namespace" . | quote }}
   labels:
-    {{- include "application.labelsWith" (dict "context" . "extra" (list $s.additionalLabels)) | nindent 4 }}
+    {{- include "application.labelsWith" (dict "context" . "extra" (list $s.labels)) | nindent 4 }}
 spec:
   clusterIP: None
   publishNotReadyAddresses: true

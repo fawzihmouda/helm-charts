@@ -8,6 +8,7 @@
     "namespaceOverride": {"type": ["string", "null"]},
     "componentOverride": {"type": ["string", "null"]},
     "partOfOverride": {"type": ["string", "null"]},
+    "nameOverride": {"type": ["string", "null"]},
     "fullnameOverride": {"type": ["string", "null"]},
     "additionalLabels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
     "workload": {
@@ -16,7 +17,7 @@
       "properties": {
         "enabled": {"type": ["boolean", "null"]},
         "kind": {"enum": ["Deployment", "StatefulSet", "DaemonSet", "", null]},
-        "additionalLabels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
+        "labels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "annotations": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "replicas": {"type": ["integer", "null"]},
         "strategy": {"type": ["object", "null"]},
@@ -46,7 +47,7 @@
         "volumes": {"type": ["array", "object", "null"]},
         "volumeMounts": {"type": ["array", "object", "null"]},
         "initContainers": {"type": ["array", "object", "null"]},
-        "additionalContainers": {"type": ["array", "object", "null"]},
+        "extraContainers": {"type": ["array", "object", "null"]},
         "automountServiceAccountToken": {"type": ["boolean", "null"]},
         "enableServiceLinks": {"type": ["boolean", "null"]},
         "terminationGracePeriodSeconds": {"type": ["integer", "null"]},
@@ -75,7 +76,7 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "additionalLabels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
+              "labels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
               "annotations": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
               "restartPolicy": {"enum": ["OnFailure", "Never", "", null]},
               "suspend": {"type": ["boolean", "null"]},
@@ -107,7 +108,7 @@
               "volumes": {"type": ["array", "object", "null"]},
               "volumeMounts": {"type": ["array", "object", "null"]},
               "initContainers": {"type": ["array", "object", "null"]},
-              "additionalContainers": {"type": ["array", "object", "null"]},
+              "extraContainers": {"type": ["array", "object", "null"]},
               "automountServiceAccountToken": {"type": ["boolean", "null"]},
               "enableServiceLinks": {"type": ["boolean", "null"]},
               "terminationGracePeriodSeconds": {"type": ["integer", "null"]},
@@ -146,7 +147,7 @@
               "startingDeadlineSeconds": {"type": ["integer", "null"]},
               "successfulJobsHistoryLimit": {"type": ["integer", "null"]},
               "failedJobsHistoryLimit": {"type": ["integer", "null"]},
-              "additionalLabels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
+              "labels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
               "annotations": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
               "restartPolicy": {"enum": ["OnFailure", "Never", "", null]},
               "suspend": {"type": ["boolean", "null"]},
@@ -178,7 +179,7 @@
               "volumes": {"type": ["array", "object", "null"]},
               "volumeMounts": {"type": ["array", "object", "null"]},
               "initContainers": {"type": ["array", "object", "null"]},
-              "additionalContainers": {"type": ["array", "object", "null"]},
+              "extraContainers": {"type": ["array", "object", "null"]},
               "automountServiceAccountToken": {"type": ["boolean", "null"]},
               "enableServiceLinks": {"type": ["boolean", "null"]},
               "terminationGracePeriodSeconds": {"type": ["integer", "null"]},
@@ -211,7 +212,7 @@
         "existingClaim": {"type": ["string", "null"]},
         "accessMode": {"enum": ["ReadWriteOnce", "ReadOnlyMany", "ReadWriteMany", "ReadWriteOncePod"]},
         "storageClass": {"type": ["string", "null"]},
-        "additionalLabels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
+        "labels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "annotations": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "storageSize": {"type": ["integer", "string", "null"]},
         "volumeMode": {"type": ["string", "null"]},
@@ -223,7 +224,7 @@
       "additionalProperties": false,
       "properties": {
         "enabled": {"type": ["boolean", "null"]},
-        "additionalLabels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
+        "labels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "annotations": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "ports": {"type": "array", "minItems": 1},
         "type": {"enum": ["ClusterIP", "NodePort", "LoadBalancer"]},
@@ -249,7 +250,7 @@
         "parentRefs": {"type": ["array", "null"]},
         "useDefaultGateways": {"enum": ["All", "None", "", null]},
         "hostnames": {"type": ["array", "null"]},
-        "additionalLabels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
+        "labels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "annotations": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "rules": {"type": ["array", "null"]}
       }
@@ -260,8 +261,9 @@
       "properties": {
         "create": {"type": ["boolean", "null"]},
         "name": {"type": ["string", "null"]},
-        "additionalLabels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
-        "annotations": {"type": ["object", "null"], "additionalProperties": {"type": "string"}}
+        "labels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
+        "annotations": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
+        "automountServiceAccountToken": {"type": ["boolean", "null"]}
       }
     },
     "rbac": {
@@ -269,7 +271,7 @@
       "additionalProperties": false,
       "properties": {
         "create": {"type": ["boolean", "null"]},
-        "additionalLabels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
+        "labels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "annotations": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "roles": {"$ref": "#/definitions/roles"},
         "clusterRoles": {"$ref": "#/definitions/roles"}
@@ -280,7 +282,7 @@
       "additionalProperties": false,
       "properties": {
         "enabled": {"type": ["boolean", "null"]},
-        "additionalLabels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
+        "labels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "annotations": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "items": {
           "type": ["object", "null"],
@@ -301,7 +303,7 @@
       "additionalProperties": false,
       "properties": {
         "enabled": {"type": ["boolean", "null"]},
-        "additionalLabels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
+        "labels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "annotations": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "items": {
           "type": ["object", "null"],
@@ -324,7 +326,7 @@
       "additionalProperties": false,
       "properties": {
         "enabled": {"type": ["boolean", "null"]},
-        "additionalLabels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
+        "labels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "annotations": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "minReplicas": {"type": ["integer", "null"]},
         "maxReplicas": {"type": "integer"},
@@ -336,8 +338,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": {"type": ["boolean", "null"]},
-        "additionalLabels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
+        "create": {"type": ["boolean", "null"]},
+        "labels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "annotations": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "ingress": {"type": ["array", "null"]},
         "egress": {"type": ["array", "null"]}
@@ -348,14 +350,14 @@
       "additionalProperties": false,
       "properties": {
         "enabled": {"type": ["boolean", "null"]},
-        "additionalLabels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
+        "labels": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "annotations": {"type": ["object", "null"], "additionalProperties": {"type": "string"}},
         "minAvailable": {"type": ["integer", "string", "null"]},
         "maxUnavailable": {"type": ["integer", "string", "null"]},
         "unhealthyPodEvictionPolicy": {"enum": ["IfHealthyBudget", "AlwaysAllow", "", null]}
       }
     },
-    "extraObjects": {"type": ["array", "object", "null"]}
+    "extraObjects": {"type": ["array", "null"], "items": {"type": ["object", "string"]}}
   },
   "definitions": {
     "image": {
@@ -365,7 +367,7 @@
         "repository": {"type": ["string", "null"]},
         "tag": {"type": ["string", "null"]},
         "digest": {"type": ["string", "null"]},
-        "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never", "", null]}
+        "imagePullPolicy": {"enum": ["Always", "IfNotPresent", "Never", "", null]}
       }
     },
     "env": {

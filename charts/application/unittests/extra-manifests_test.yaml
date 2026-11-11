@@ -1,34 +1,48 @@
-suite: extraObjects
+suite: test extra-manifests
 templates:
-  - templates/extraobjects.yaml
+  - extra-manifests.yaml
+release:
+  name: demo
 set:
+  fullnameOverride: demo
   workload.image.repository: nginx
 tests:
-  - it: renders map entries in key order
+  - it: renders a string extraObject that embeds the selector labels
     set:
       extraObjects:
-        b: {apiVersion: v1, kind: ConfigMap, metadata: {name: b}}
-        a: {apiVersion: v1, kind: ConfigMap, metadata: {name: a}}
+        - |
+          apiVersion: monitoring.coreos.com/v1
+          kind: ServiceMonitor
+          metadata:
+            name: {{ include "application.fullname" . }}
+          spec:
+            selector:
+              matchLabels:
+                {{- include "application.selectorLabels" . | nindent 8 }}
     asserts:
-      - hasDocuments:
-          count: 2
       - equal:
-          path: metadata.name
-          value: a
-        documentIndex: 0
-      - equal:
-          path: metadata.name
-          value: b
-        documentIndex: 1
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: application
+            app.kubernetes.io/instance: demo
 
-  - it: skips a null entry instead of repeating the previous one
+  - it: renders an object entry through tpl and adds nothing to it
     set:
       extraObjects:
-        - {apiVersion: v1, kind: ConfigMap, metadata: {name: one}}
-        - null
+        - apiVersion: monitoring.coreos.com/v1alpha1
+          kind: AlertmanagerConfig
+          metadata:
+            name: '{{ include "application.fullname" . }}'
+            labels:
+              alertmanagerConfig: workload
     asserts:
-      - hasDocuments:
-          count: 1
+      - equal:
+          path: metadata.name
+          value: demo
+      - equal:
+          path: metadata.labels
+          value:
+            alertmanagerConfig: workload
 
   - it: renders every document of a multi-document string
     set:
@@ -46,27 +60,6 @@ tests:
     asserts:
       - hasDocuments:
           count: 2
-
-  - it: fails on a document without kind
-    set:
-      extraObjects:
-        - {apiVersion: v1, Kind: ConfigMap, metadata: {name: x}}
-    asserts:
-      - failedTemplate:
-          errorPattern: extraObjects entry 0 has a document without kind
-
-  - it: fails on invalid YAML
-    set:
-      extraObjects:
-        - |
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: x
-           labels: {}
-    asserts:
-      - failedTemplate:
-          errorPattern: extraObjects entry 0 is not valid YAML
 
   - it: keeps escaped template syntax for other tools
     set:
@@ -88,7 +81,7 @@ tests:
           path: spec.groups[0].rules[0].annotations.summary
           value: "{{ $labels.instance }} is down"
 
-  - it: splits documents at a separator that carries a comment
+  - it: renders the documents after a separator that carries a comment
     set:
       extraObjects:
         - |

@@ -7,7 +7,7 @@ metadata:
   name: {{ include "application.pvcName" . | quote }}
   namespace: {{ include "application.namespace" . | quote }}
   labels:
-    {{- include "application.labelsWith" (dict "context" . "extra" (list $p.additionalLabels)) | nindent 4 }}
+    {{- include "application.labelsWith" (dict "context" . "extra" (list $p.labels)) | nindent 4 }}
   {{- with $p.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}

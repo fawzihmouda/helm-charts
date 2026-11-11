@@ -11,7 +11,7 @@ metadata:
   name: {{ include "application.fullname" . | quote }}
   namespace: {{ include "application.namespace" . | quote }}
   labels:
-    {{- include "application.labelsWith" (dict "context" . "extra" (list .Values.autoscaling.additionalLabels)) | nindent 4 }}
+    {{- include "application.labelsWith" (dict "context" . "extra" (list .Values.autoscaling.labels)) | nindent 4 }}
   {{- with .Values.autoscaling.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}

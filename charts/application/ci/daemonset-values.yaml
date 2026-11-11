@@ -1,12 +1,6 @@
 # DaemonSet node agent with no Service.
-fullnameOverride: agent
-
 workload:
   kind: DaemonSet
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 1
   image:
     repository: busybox
     tag: "1.37"
@@ -22,23 +16,6 @@ workload:
   # busybox runs as root by default, which the default security context rejects.
   securityContext:
     runAsUser: 65534
-  resources:
-    requests:
-      cpu: 5m
-      memory: 8Mi
 
 service:
   enabled: false
-
-extraObjects:
-  - apiVersion: autoscaling.k8s.io/v1
-    kind: VerticalPodAutoscaler
-    metadata:
-      name: '{{ include "application.fullname" . }}'
-    spec:
-      targetRef:
-        apiVersion: apps/v1
-        kind: '{{ include "application.workloadKind" . }}'
-        name: '{{ include "application.fullname" . }}'
-      updatePolicy:
-        updateMode: "Off"

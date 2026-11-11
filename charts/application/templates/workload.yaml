@@ -69,7 +69,7 @@ metadata:
   name: {{ $name | quote }}
   namespace: {{ include "application.namespace" . | quote }}
   labels:
-    {{- include "application.labelsWith" (dict "context" . "extra" (list $w.additionalLabels)) | nindent 4 }}
+    {{- include "application.labelsWith" (dict "context" . "extra" (list $w.labels)) | nindent 4 }}
   {{- with $w.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -98,7 +98,7 @@ spec:
   - metadata:
       name: data
       labels:
-        {{- merge (include "application.selectorLabels" . | fromYaml) (default dict $p.additionalLabels) | toYaml | nindent 8 }}
+        {{- merge (include "application.selectorLabels" . | fromYaml) (default dict $p.labels) | toYaml | nindent 8 }}
       {{- with $p.annotations }}
       annotations:
         {{- toYaml . | nindent 8 }}

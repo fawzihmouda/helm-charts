@@ -1,0 +1,84 @@
+suite: test role
+templates:
+  - role.yaml
+release:
+  name: demo
+set:
+  fullnameOverride: demo
+  workload.image.repository: nginx
+tests:
+  - it: binds Roles to the service account in the overridden namespace
+    documentIndex: 1
+    set:
+      namespaceOverride: apps
+      serviceAccount.create: true
+      rbac.roles:
+        - name: read
+          rules: []
+    asserts:
+      - isKind:
+          of: RoleBinding
+      - equal:
+          path: roleRef.name
+          value: demo-read
+      - equal:
+          path: subjects[0]
+          value:
+            kind: ServiceAccount
+            name: demo
+            namespace: apps
+
+  - it: binds ClusterRoles with a name that includes the namespace
+    documentIndex: 1
+    release:
+      namespace: apps
+    set:
+      serviceAccount.create: true
+      rbac.clusterRoles:
+        - name: nodes
+          rules: []
+    asserts:
+      - isKind:
+          of: ClusterRoleBinding
+      - equal:
+          path: metadata.name
+          value: apps-demo-nodes
+      - notExists:
+          path: metadata.namespace
+      - equal:
+          path: roleRef
+          value:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: apps-demo-nodes
+
+  - it: refuses to bind roles to the namespace's default account
+    set:
+      serviceAccount.create: false
+      rbac.roles:
+        - name: read
+          rules: []
+    asserts:
+      - failedTemplate:
+          errorPattern: rbac roles need serviceAccount.create
+
+  - it: creates no roles when rbac.create is false
+    set:
+      rbac.create: false
+      rbac.roles:
+        - name: read
+          rules: []
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: rejects an unknown key in a role
+    set:
+      serviceAccount.create: true
+      rbac.roles:
+        - name: configmaps
+          rule: []
+          rules: []
+    asserts:
+      - failedTemplate:
+          errorPattern: additional properties 'rule' not allowed

@@ -1,0 +1,64 @@
+suite: test pdb
+templates:
+  - pdb.yaml
+release:
+  name: demo
+set:
+  fullnameOverride: demo
+  workload.image.repository: nginx
+tests:
+  - it: defaults the PDB to maxUnavailable 1
+    set:
+      pdb.enabled: true
+    asserts:
+      - equal:
+          path: spec
+          value:
+            maxUnavailable: 1
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: application
+                app.kubernetes.io/instance: demo
+
+  - it: allows minAvailable 0
+    set:
+      pdb.enabled: true
+      pdb.minAvailable: 0
+      pdb.maxUnavailable: null
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 0
+
+  - it: renders only minAvailable when it is set
+    set:
+      pdb.enabled: true
+      pdb.minAvailable: 50%
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 50%
+      - notExists:
+          path: spec.maxUnavailable
+
+  - it: renders the PDB labels and eviction policy
+    set:
+      pdb.enabled: true
+      pdb.labels:
+        team: platform
+      pdb.unhealthyPodEvictionPolicy: AlwaysAllow
+    asserts:
+      - equal:
+          path: metadata.labels.team
+          value: platform
+      - equal:
+          path: spec.unhealthyPodEvictionPolicy
+          value: AlwaysAllow
+
+  - it: rejects a PDB for a DaemonSet
+    set:
+      pdb.enabled: true
+      workload.kind: DaemonSet
+    asserts:
+      - failedTemplate:
+          errorPattern: can't be used with workload.kind DaemonSet

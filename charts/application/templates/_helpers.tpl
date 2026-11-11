@@ -1,8 +1,25 @@
 {{/*
-Name of every resource the chart creates: the release name, or fullnameOverride.
+Name of the chart, or nameOverride. Used in the app.kubernetes.io/name label.
+*/}}
+{{- define "application.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{/*
+Name of every resource the chart creates: fullnameOverride, or the release name
+followed by the chart name. A release name that contains the chart name is used alone.
 */}}
 {{- define "application.fullname" -}}
-{{- default .Release.Name .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- if .Values.fullnameOverride -}}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- $name := default .Chart.Name .Values.nameOverride -}}
+{{- if contains $name .Release.Name -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -151,7 +168,7 @@ Common labels
 Common labels merged with resource-specific label maps, so each key appears once.
 Later maps win.
 Usage:
-{{ include "application.labelsWith" (dict "context" $ "extra" (list .Values.service.additionalLabels)) }}
+{{ include "application.labelsWith" (dict "context" $ "extra" (list .Values.service.labels)) }}
 */}}
 {{- define "application.labelsWith" -}}
 {{- $labels := include "application.labels" .context | fromYaml -}}
@@ -166,7 +183,7 @@ Selector labels for the main workload. Job and CronJob pods override
 app.kubernetes.io/name so the Service and PDB never select them.
 */}}
 {{- define "application.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "application.fullname" . | quote }}
+app.kubernetes.io/name: {{ include "application.name" . | quote }}
 app.kubernetes.io/instance: {{ .Release.Name | quote }}
 {{- end }}
 
@@ -298,7 +315,7 @@ initContainers:
 containers:
 - name: {{ $name | quote }}
   image: {{ include "application.image" (dict "image" $pod.image "name" $name "context" $) | quote }}
-  {{- with $pod.image.pullPolicy }}
+  {{- with $pod.image.imagePullPolicy }}
   imagePullPolicy: {{ . }}
   {{- end }}
   {{- range $field := list "command" "args" "envFrom" }}
@@ -330,7 +347,7 @@ containers:
   volumeDevices:
     {{- toYaml . | nindent 2 }}
   {{- end }}
-{{- with $pod.additionalContainers }}
+{{- with $pod.extraContainers }}
   {{- include "application.namedList" (dict "value" . "securityContext" $securityContext "volumeMount" $tmpMount "context" $) | nindent 0 }}
 {{- end }}
 {{- if or $volumes $pod.volumes }}

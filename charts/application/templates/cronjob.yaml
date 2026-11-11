@@ -9,7 +9,7 @@ metadata:
   name: {{ $fullName | quote }}
   namespace: {{ include "application.namespace" $ | quote }}
   labels:
-    {{- include "application.labelsWith" (dict "context" $ "extra" (list (dict "app.kubernetes.io/name" $fullName) $job.additionalLabels)) | nindent 4 }}
+    {{- include "application.labelsWith" (dict "context" $ "extra" (list (dict "app.kubernetes.io/name" $fullName) $job.labels)) | nindent 4 }}
   {{- with $job.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}

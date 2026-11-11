@@ -1,0 +1,8 @@
+{{- range .Values.extraObjects }}
+---
+{{- if kindIs "string" . }}
+{{ tpl . $ }}
+{{- else }}
+{{ include "application.tplvalues.render" (dict "value" . "context" $) }}
+{{- end }}
+{{- end }}

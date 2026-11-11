@@ -1,0 +1,44 @@
+# Init containers, an extra container, probes and resources.
+workload:
+  replicas: 2
+  image:
+    repository: ghcr.io/stefanprodan/podinfo
+    tag: "6.17.0"
+  command: ["./podinfo", "--port=8080"]
+  ports:
+    - containerPort: 8080
+      name: http
+  initContainers:
+    - name: first
+      image: busybox:1.37
+      command: ["sh", "-c", "echo first > /tmp/first"]
+    - name: second
+      image: busybox:1.37
+      command: ["sh", "-c", "echo second"]
+  extraContainers:
+    - name: sidecar
+      image: busybox:1.37
+      command: ["sh", "-c", "while true; do sleep 60; done"]
+  startupProbe:
+    failureThreshold: 30
+    periodSeconds: 2
+    httpGet:
+      path: /healthz
+      port: http
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+  livenessProbe:
+    tcpSocket:
+      port: http
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+  # podinfo's image user is a name, and busybox runs as root, so runAsNonRoot needs a UID.
+  securityContext:
+    runAsUser: 1000
+  terminationGracePeriodSeconds: 10

@@ -1,0 +1,28 @@
+workload:
+  image:
+    repository: ghcr.io/stefanprodan/podinfo
+    tag: "6.17.0"
+  # podinfo sets CMD, not ENTRYPOINT, so the command must name the binary.
+  command: ["./podinfo", "--port=8080"]
+  # podinfo's image user is a name, so runAsNonRoot needs a UID.
+  securityContext:
+    runAsUser: 1000
+
+serviceAccount:
+  annotations:
+    example.com/owner: platform
+  automountServiceAccountToken: false
+
+rbac:
+  roles:
+    - name: configmaps
+      rules:
+        - apiGroups: [""]
+          resources: [configmaps]
+          verbs: [get, list]
+  clusterRoles:
+    - name: nodes
+      rules:
+        - apiGroups: [""]
+          resources: [nodes]
+          verbs: [get, list]

@@ -10,7 +10,7 @@ metadata:
   name: {{ include "application.fullname" . | quote }}
   namespace: {{ include "application.namespace" . | quote }}
   labels:
-    {{- include "application.labelsWith" (dict "context" . "extra" (list $r.additionalLabels)) | nindent 4 }}
+    {{- include "application.labelsWith" (dict "context" . "extra" (list $r.labels)) | nindent 4 }}
   {{- with $r.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}

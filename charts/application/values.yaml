@@ -1,5 +1,5 @@
 # Values that take a list or a map (`env`, `volumes`, `volumeMounts`, `initContainers`,
-# `additionalContainers`, `extraObjects`) default to null, because Helm warns when a list
+# `extraContainers`) default to null, because Helm warns when a list
 # replaces a map default. Optional numbers and rule lists where "unset" differs from
 # "empty" also default to null.
 # In a map, the key is the entry's name and wins over a `name` inside the entry. A null
@@ -17,10 +17,13 @@ componentOverride: ""
 # @section -- Parameters
 partOfOverride: ""
 
-# -- (string) Base name of every resource. Set it when two releases of this chart must not
-# share a name, for example two aliases of the chart in one umbrella chart.
-# A StatefulSet name must be at most 52 characters.
-# @default -- `{{ .Release.Name }}`
+# -- (string) Name used in the `app.kubernetes.io/name` label and in the default resource name.
+# @default -- `application`
+# @section -- Parameters
+nameOverride: ""
+
+# -- (string) Full name of every resource. A StatefulSet name must be at most 52 characters.
+# @default -- the release name when it contains `nameOverride`, otherwise `<release name>-<nameOverride>`
 # @section -- Parameters
 fullnameOverride: ""
 
@@ -44,7 +47,7 @@ workload:
   kind: Deployment
   # -- (object) Additional labels for the workload.
   # @section -- Workload Parameters
-  additionalLabels: {}
+  labels: {}
   # -- (object) Annotations for the workload.
   # @section -- Workload Parameters
   annotations: {}
@@ -107,7 +110,7 @@ workload:
     digest: ""
     # -- (string) Image pull policy.
     # @section -- Workload Parameters
-    pullPolicy: IfNotPresent
+    imagePullPolicy: IfNotPresent
   # -- (tpl/list) List of secrets used to pull the images.
   # @section -- Workload Parameters
   imagePullSecrets: []
@@ -232,7 +235,7 @@ workload:
   # -- (tpl/list or object) Containers that run beside the app container.
   # A map is keyed by container name.
   # @section -- Workload Parameters
-  additionalContainers:
+  extraContainers:
     # - name: log-shipper
     #   image: busybox:1.37
     #   command: ["sh", "-c", "tail -F /tmp/app.log"]
@@ -312,7 +315,7 @@ job:
   # @section -- Job Parameters
   enabled: false
   # -- (object) Map of Jobs. The key is the name suffix, the value is the Job.
-  # Each Job takes the pod values of `workload` (`image` is required), plus `additionalLabels`,
+  # Each Job takes the pod values of `workload` (`image` is required), plus `labels`,
   # `annotations`, `restartPolicy` (default `OnFailure`, or `Never` with a `podFailurePolicy`)
   # and the Job fields in the example.
   # The Job name ends in a hash of its spec. A Job's pod template can't change, so a change
@@ -385,7 +388,7 @@ persistence:
   # -- (bool) Create a PVC, or one PVC per pod for a StatefulSet.
   # A StatefulSet's PVCs are named `data-<pod name>`, and its claim templates can't change
   # after install. Turning persistence on or off, or changing storageSize, storageClass,
-  # accessMode, volumeMode, volumeName, existingClaim, additionalLabels or annotations,
+  # accessMode, volumeMode, volumeName, existingClaim, labels or annotations,
   # needs `kubectl delete sts <name> --cascade=orphan` before the upgrade.
   # Resize existing claims by editing the PVCs directly.
   # @section -- Persistence Parameters
@@ -413,7 +416,7 @@ persistence:
   storageClass:
   # -- (object) Additional labels for the PVC.
   # @section -- Persistence Parameters
-  additionalLabels: {}
+  labels: {}
   # -- (object) Annotations for the PVC.
   # @section -- Persistence Parameters
   annotations: {}
@@ -434,7 +437,7 @@ service:
   enabled: true
   # -- (object) Additional labels for the Service.
   # @section -- Service Parameters
-  additionalLabels: {}
+  labels: {}
   # -- (tpl/object) Annotations for the Service.
   # @section -- Service Parameters
   annotations: {}
@@ -507,7 +510,7 @@ httpRoute:
   hostnames: []
   # -- (object) Additional labels for the HTTPRoute.
   # @section -- HTTPRoute Parameters
-  additionalLabels: {}
+  labels: {}
   # -- (object) Annotations for the HTTPRoute.
   # @section -- HTTPRoute Parameters
   annotations: {}
@@ -528,17 +531,21 @@ serviceAccount:
   # -- (bool) Create a Service Account. All pods and role bindings use it.
   # When false, pods use `name` if set (an existing account) or the namespace's `default` account.
   # @section -- RBAC Parameters
-  create: false
+  create: true
   # -- (string) Service Account name.
   # @default -- `{{ include "application.fullname" $ }}` when created, otherwise `default`
   # @section -- RBAC Parameters
   name: ""
   # -- (object) Additional labels for the Service Account.
   # @section -- RBAC Parameters
-  additionalLabels: {}
+  labels: {}
   # -- (object) Annotations for the Service Account.
   # @section -- RBAC Parameters
   annotations: {}
+  # -- (bool) Let pods that use the Service Account mount its token.
+  # `workload.automountServiceAccountToken` overrides it for one pod.
+  # @section -- RBAC Parameters
+  automountServiceAccountToken: true
 
 rbac:
   # -- (bool) Create the roles in `roles` and `clusterRoles`, and their bindings.
@@ -546,7 +553,7 @@ rbac:
   create: true
   # -- (object) Additional labels for the roles and bindings.
   # @section -- RBAC Parameters
-  additionalLabels: {}
+  labels: {}
   # -- (object) Annotations for the roles and bindings.
   # @section -- RBAC Parameters
   annotations: {}
@@ -576,7 +583,7 @@ configMap:
   enabled: false
   # -- (object) Additional labels for the ConfigMaps.
   # @section -- ConfigMap Parameters
-  additionalLabels: {}
+  labels: {}
   # -- (object) Annotations for the ConfigMaps.
   # @section -- ConfigMap Parameters
   annotations: {}
@@ -606,7 +613,7 @@ secret:
   enabled: false
   # -- (object) Additional labels for the Secrets.
   # @section -- Secret Parameters
-  additionalLabels: {}
+  labels: {}
   # -- (object) Annotations for the Secrets.
   # @section -- Secret Parameters
   annotations: {}
@@ -635,7 +642,7 @@ autoscaling:
   enabled: false
   # -- (object) Additional labels for the HPA.
   # @section -- Autoscaling Parameters
-  additionalLabels: {}
+  labels: {}
   # -- (object) Annotations for the HPA.
   # @section -- Autoscaling Parameters
   annotations: {}
@@ -666,10 +673,10 @@ networkPolicy:
   # It selects the pods by release and name, so `podLabels` can't take a pod out of it.
   # Needs `ingress` or `egress` to be set.
   # @section -- NetworkPolicy Parameters
-  enabled: false
+  create: false
   # -- (object) Additional labels for the NetworkPolicy.
   # @section -- NetworkPolicy Parameters
-  additionalLabels: {}
+  labels: {}
   # -- (object) Annotations for the NetworkPolicy.
   # @section -- NetworkPolicy Parameters
   annotations: {}
@@ -700,7 +707,7 @@ pdb:
   enabled: false
   # -- (object) Additional labels for the PDB.
   # @section -- PodDisruptionBudget Parameters
-  additionalLabels: {}
+  labels: {}
   # -- (object) Annotations for the PDB.
   # @section -- PodDisruptionBudget Parameters
   annotations: {}
@@ -716,16 +723,16 @@ pdb:
   # @section -- PodDisruptionBudget Parameters
   unhealthyPodEvictionPolicy: ""
 
-# -- ([list or object] of [tpl/object or tpl/string]) Extra manifests to deploy.
+# -- (list) Extra manifests to deploy.
 # Use this for any resource the chart doesn't model: a second Service, HTTPRoute or PVC,
 # an ExternalName Service, or a resource from a third-party CRD.
-# A list or a map (keys only sort the entries). Each entry is an object or a string, rendered
-# through tpl, and gets the chart's common labels. Because of tpl, a literal `{{ }}` meant for
-# another tool (Prometheus, Alertmanager, Grafana, ESO templates) must be escaped as
-# '{{`{{ $labels.instance }}`}}'. Use the string form when a field takes rendered
-# YAML, such as a label selector. Entries go to `namespaceOverride` when it is set.
+# Each entry is an object or a string, rendered through tpl. Because of tpl, a literal
+# `{{ }}` meant for another tool (Prometheus, Alertmanager, Grafana, ESO templates) must be
+# escaped as '{{`{{ $labels.instance }}`}}'. Use the string form when a field takes rendered
+# YAML, such as a label selector. An entry gets no labels from the chart and goes to the
+# release namespace unless it sets its own.
 # @section -- Parameters
-extraObjects:
+extraObjects: []
   # External Secrets: a Secret the app reads through workload.envFrom.
   # - apiVersion: external-secrets.io/v1
   #   kind: ExternalSecret

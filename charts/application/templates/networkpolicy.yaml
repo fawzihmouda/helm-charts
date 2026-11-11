@@ -1,8 +1,8 @@
-{{- if .Values.networkPolicy.enabled }}
+{{- if .Values.networkPolicy.create }}
 {{- $n := .Values.networkPolicy }}
 {{- $ingress := not (kindIs "invalid" $n.ingress) }}
 {{- $egress := not (kindIs "invalid" $n.egress) }}
-{{- $names := list (include "application.fullname" .) }}
+{{- $names := list (include "application.name" .) }}
 {{- range $jobs := list .Values.job .Values.cronJob }}
 {{- if $jobs.enabled }}
 {{- range $name, $_ := $jobs.jobs }}
@@ -11,7 +11,7 @@
 {{- end }}
 {{- end }}
 {{- if not (or $ingress $egress) }}
-{{- fail "networkPolicy.enabled needs networkPolicy.ingress or networkPolicy.egress: set rules, or [] to deny all" }}
+{{- fail "networkPolicy.create needs networkPolicy.ingress or networkPolicy.egress: set rules, or [] to deny all" }}
 {{- end }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -20,7 +20,7 @@ metadata:
   name: {{ include "application.fullname" . | quote }}
   namespace: {{ include "application.namespace" . | quote }}
   labels:
-    {{- include "application.labelsWith" (dict "context" . "extra" (list $n.additionalLabels)) | nindent 4 }}
+    {{- include "application.labelsWith" (dict "context" . "extra" (list $n.labels)) | nindent 4 }}
   {{- with $n.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}

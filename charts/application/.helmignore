@@ -1,14 +1,5 @@
-# Files that don't belong in the packaged chart.
-.DS_Store
-.git/
-.gitignore
-*.swp
-*.bak
-*.tmp
-*.orig
-*~
-.idea/
-.vscode/
+/*.tgz
+output
 ci/
-tests/
-example.yaml
+unittests/
+*.gotmpl
