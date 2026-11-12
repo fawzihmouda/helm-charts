@@ -12,7 +12,6 @@ on:
       - values.schema.json
       - "templates/**"
       - README.md
-      - .helmignore
 
 concurrency:
   group: release
