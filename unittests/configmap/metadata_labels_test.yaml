@@ -1,0 +1,90 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: configmap - metadata - labels
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: default labels
+    set:
+      configMaps:
+        config:
+          data:
+            test: test
+    documentSelector:
+      path: $[?(@.kind == "ConfigMap")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: metadata.labels
+          value:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: RELEASE-NAME
+            helm.sh/chart: application-1.0.0
+
+  - it: custom labels
+    set:
+      configMaps:
+        config:
+          data:
+            test: test
+          labels:
+            test_label: test
+    documentSelector:
+      path: $[?(@.kind == "ConfigMap")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: metadata.labels
+          value:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: RELEASE-NAME
+            helm.sh/chart: application-1.0.0
+            test_label: test
+
+  - it: custom labels mixed with global labels
+    set:
+      global:
+        labels:
+          global_label: test
+      configMaps:
+        config:
+          data:
+            test: test
+          labels:
+            test_label: test
+    documentSelector:
+      path: $[?(@.kind == "ConfigMap")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: metadata.labels
+          value:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: RELEASE-NAME
+            global_label: test
+            helm.sh/chart: application-1.0.0
+            test_label: test
+
+  - it: resource labels override generated and global labels
+    set:
+      global:
+        labels:
+          app.kubernetes.io/name: global-name
+      configMaps:
+        config:
+          data:
+            test: test
+          labels:
+            app.kubernetes.io/name: configmap-name
+    documentSelector:
+      path: $[?(@.kind == "ConfigMap")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: configmap-name

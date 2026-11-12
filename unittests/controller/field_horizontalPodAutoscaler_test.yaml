@@ -1,0 +1,195 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: controller - fields - horizontalPodAutoscaler
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+
+tests:
+  - it: default should not exist
+    asserts:
+      - not: true
+        containsDocument:
+          apiVersion: autoscaling/v2
+          kind: HorizontalPodAutoscaler
+          any: true
+
+  - it: created with maxReplicas only
+    set:
+      deployment:
+        horizontalPodAutoscaler:
+          maxReplicas: 5
+    documentSelector:
+      path: $[?(@.kind == "HorizontalPodAutoscaler")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.maxReplicas
+          value: 5
+      - notExists:
+          path: spec.minReplicas
+
+  - it: created with minReplicas and maxReplicas
+    set:
+      deployment:
+        horizontalPodAutoscaler:
+          minReplicas: 2
+          maxReplicas: 10
+    documentSelector:
+      path: $[?(@.kind == "HorizontalPodAutoscaler")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.minReplicas
+          value: 2
+      - equal:
+          path: spec.maxReplicas
+          value: 10
+
+  - it: created with minReplicas 0 for scale-to-zero
+    set:
+      deployment:
+        horizontalPodAutoscaler:
+          minReplicas: 0
+          maxReplicas: 10
+    documentSelector:
+      path: $[?(@.kind == "HorizontalPodAutoscaler")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.minReplicas
+          value: 0
+      - equal:
+          path: spec.maxReplicas
+          value: 10
+
+  - it: created with cpu resource metric
+    set:
+      deployment:
+        horizontalPodAutoscaler:
+          maxReplicas: 5
+          metrics:
+            - type: Resource
+              resource:
+                name: cpu
+                target:
+                  type: Utilization
+                  averageUtilization: 80
+    documentSelector:
+      path: $[?(@.kind == "HorizontalPodAutoscaler")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.metrics[0].type
+          value: Resource
+      - equal:
+          path: spec.metrics[0].resource.name
+          value: cpu
+      - equal:
+          path: spec.metrics[0].resource.target.averageUtilization
+          value: 80
+
+  - it: hpa targets the correct controller
+    set:
+      deployment:
+        horizontalPodAutoscaler:
+          maxReplicas: 5
+    documentSelector:
+      path: $[?(@.kind == "HorizontalPodAutoscaler")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.scaleTargetRef
+          value:
+            apiVersion: apps/v1
+            kind: Deployment
+            name: release-name
+
+  - it: scaleTargetRef kind is StatefulSet for statefulset controller type
+    set:
+      statefulset:
+        horizontalPodAutoscaler:
+          maxReplicas: 5
+        image:
+          repository: ghcr.io/mendhak/http-https-echo
+          tag: 31
+      deployment: null
+    documentSelector:
+      path: $[?(@.kind == "HorizontalPodAutoscaler")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.scaleTargetRef.kind
+          value: StatefulSet
+      - equal:
+          path: spec.scaleTargetRef.apiVersion
+          value: apps/v1
+
+  - it: auto-suppresses replicas on Deployment when HPA is configured
+    set:
+      deployment:
+        replicas: 3
+        horizontalPodAutoscaler:
+          maxReplicas: 10
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - notExists:
+          path: spec.replicas
+
+  - it: propagates replicas to minReplicas when minReplicas is not set
+    set:
+      deployment:
+        replicas: 3
+        horizontalPodAutoscaler:
+          maxReplicas: 10
+    documentSelector:
+      path: $[?(@.kind == "HorizontalPodAutoscaler")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.minReplicas
+          value: 3
+      - equal:
+          path: spec.maxReplicas
+          value: 10
+
+  - it: does not override minReplicas when explicitly set
+    set:
+      deployment:
+        replicas: 3
+        horizontalPodAutoscaler:
+          minReplicas: 5
+          maxReplicas: 10
+    documentSelector:
+      path: $[?(@.kind == "HorizontalPodAutoscaler")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.minReplicas
+          value: 5
+
+  - it: hpa with behavior config
+    set:
+      deployment:
+        horizontalPodAutoscaler:
+          maxReplicas: 10
+          behavior:
+            scaleDown:
+              stabilizationWindowSeconds: 300
+              policies:
+                - type: Pods
+                  value: 1
+                  periodSeconds: 60
+    documentSelector:
+      path: $[?(@.kind == "HorizontalPodAutoscaler")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.behavior.scaleDown.stabilizationWindowSeconds
+          value: 300
+      - equal:
+          path: spec.behavior.scaleDown.policies[0].type
+          value: Pods

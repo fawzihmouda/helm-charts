@@ -1,0 +1,26 @@
+---
+# yaml-language-server: $schema=../values.schema.json
+deployment:
+  image:
+    repository: ghcr.io/mendhak/http-https-echo
+    tag: 31
+    pullPolicy: IfNotPresent
+
+  probes:
+    liveness:
+      enabled: true
+    readiness:
+      enabled: true
+    startup:
+      enabled: true
+
+service:
+  ports:
+    http:
+      port: 8080
+
+persistence:
+  media:
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 1Gi

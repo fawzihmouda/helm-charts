@@ -1,0 +1,45 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: chart - validations
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: advancedMounts for disabled persistence should not fail
+    set:
+      persistence:
+        data:
+          enabled: false
+          type: configMap
+          name: myConfigMap
+          advancedMounts:
+            main:
+              - path: /data/config.yaml
+                readOnly: false
+                mountPropagation: HostToContainer
+                subPath: config.yaml
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: native and ExternalSecret target name collisions should fail
+    set:
+      secrets:
+        native:
+          forceRename: shared-secret
+          stringData:
+            value: native
+      externalSecrets:
+        eso:
+          target:
+            name: shared-secret
+          data:
+            - secretKey: value
+              remoteRef:
+                key: credentials
+              sourceRef:
+                storeRef:
+                  name: provider-store
+    asserts:
+      - failedTemplate:
+          errorMessage: "Secret 'native': Rendered Secret name 'shared-secret' collides with ExternalSecret 'eso'. Choose unique Secret names."

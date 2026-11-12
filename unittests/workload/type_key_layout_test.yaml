@@ -1,0 +1,200 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: workload - type key layout
+templates:
+  - common.yaml
+tests:
+  - it: renders the workload set under its type key
+    set:
+      statefulset:
+        image:
+          repository: nginx
+          tag: "1.27"
+    asserts:
+      - hasDocuments:
+          count: 2
+      - containsDocument:
+          kind: StatefulSet
+          apiVersion: apps/v1
+          name: release-name
+          any: true
+
+  - it: puts main container fields under the type key and names the container after the release
+    set:
+      deployment:
+        replicas: 2
+        image:
+          repository: nginx
+          tag: "1.27"
+        env:
+          TZ: Australia/Sydney
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 2
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: RELEASE-NAME
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: nginx:1.27
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: TZ
+              value: Australia/Sydney
+
+  - it: adds additionalContainers next to the main container
+    set:
+      deployment:
+        image:
+          repository: nginx
+          tag: "1.27"
+        additionalContainers:
+          shipper:
+            dependsOn: main
+            image:
+              repository: fluent/fluent-bit
+              tag: "3.2"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: RELEASE-NAME
+      - equal:
+          path: spec.template.spec.containers[1].name
+          value: shipper
+
+  - it: reads type options directly under the type key
+    set:
+      cronjob:
+        schedule: "0 2 * * *"
+        timeZone: Australia/Sydney
+        image:
+          repository: busybox
+          tag: "1.37"
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - equal:
+          path: spec.schedule
+          value: "0 2 * * *"
+      - equal:
+          path: spec.timeZone
+          value: Australia/Sydney
+
+  - it: renders a single flat Service for the workload
+    set:
+      deployment:
+        image:
+          repository: nginx
+          tag: "1.27"
+      service:
+        ports:
+          http:
+            port: 8080
+    documentSelector:
+      path: kind
+      value: Service
+    asserts:
+      - equal:
+          path: metadata.name
+          value: release-name
+      - equal:
+          path: spec.ports[0].port
+          value: 8080
+      - notExists:
+          path: spec.selector["app.kubernetes.io/controller"]
+
+  - it: mounts advancedMounts into the named container only
+    set:
+      deployment:
+        image:
+          repository: nginx
+          tag: "1.27"
+        additionalContainers:
+          shipper:
+            image:
+              repository: fluent/fluent-bit
+              tag: "3.2"
+      persistence:
+        tmp:
+          type: emptyDir
+          advancedMounts:
+            shipper:
+              - path: /tmp
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].volumeMounts
+      - equal:
+          path: spec.template.spec.containers[1].volumeMounts[0].mountPath
+          value: /tmp
+
+  - it: fails when no workload type is set
+    asserts:
+      - failedTemplate:
+          errorMessage: "Set exactly one workload type out of: deployment, statefulset, daemonset, job, cronjob. Found: []"
+
+  - it: fails when two workload types are set
+    set:
+      deployment:
+        image:
+          repository: nginx
+          tag: "1.27"
+      job:
+        image:
+          repository: busybox
+          tag: "1.37"
+    asserts:
+      - failedTemplate:
+          errorMessage: "Set exactly one workload type out of: deployment, statefulset, daemonset, job, cronjob. Found: [deployment, job]"
+
+  - it: ignores a workload type set to null
+    set:
+      deployment: null
+      job:
+        image:
+          repository: busybox
+          tag: "1.37"
+    asserts:
+      - containsDocument:
+          kind: Job
+          apiVersion: batch/v1
+          any: true
+
+  - it: rejects the controllers layout
+    set:
+      controllers:
+        main:
+          containers:
+            main:
+              image:
+                repository: nginx
+                tag: "1.27"
+    asserts:
+      - failedTemplate:
+          errorMessage: "controllers is not supported. Set the workload under one of: deployment, statefulset, daemonset, job, cronjob"
+
+  - it: reserves the main container name
+    set:
+      deployment:
+        image:
+          repository: nginx
+          tag: "1.27"
+        additionalContainers:
+          main:
+            image:
+              repository: busybox
+              tag: "1.37"
+    asserts:
+      - failedTemplate:
+          errorMessage: "additionalContainers can't use the name main: it is reserved for the main container"

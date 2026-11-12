@@ -1,0 +1,60 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: pod - fields - hostAliases
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: default should pass
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - notExists:
+          path: spec.template.spec.hostAliases
+
+  - it: defaultPodOption should pass
+    set:
+      defaultPodOptions:
+        hostAliases:
+          - ip: 192.168.1.100
+            hostnames:
+              - example.com
+              - www.example.com
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.hostAliases
+          value:
+            - ip: "192.168.1.100"
+              hostnames:
+                - "example.com"
+                - "www.example.com"
+
+  - it: defaultPodOption with pod override should pass
+    set:
+      defaultPodOptions:
+        hostAliases:
+          - ip: 192.168.1.100
+            hostnames:
+              - example.com
+              - www.example.com
+      deployment:
+        pod:
+          hostAliases:
+            - ip: 127.0.0.1
+              hostnames:
+                - localhost
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.hostAliases
+          value:
+            - ip: "127.0.0.1"
+              hostnames:
+                - "localhost"

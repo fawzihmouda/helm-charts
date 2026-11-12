@@ -1,0 +1,34 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: service - fields - externalTrafficPolicy
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+  - ../_values/service_default.yaml
+tests:
+  - it: externalTrafficPolicy can be configured for NodePort service
+    set:
+      service:
+        type: NodePort
+        externalTrafficPolicy: Local
+    documentSelector:
+      path: $[?(@.kind == "Service")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.externalTrafficPolicy
+          value: Local
+
+  - it: externalTrafficPolicy can be configured for LoadBalancer service
+    set:
+      service:
+        type: LoadBalancer
+        externalTrafficPolicy: Local
+    documentSelector:
+      path: $[?(@.kind == "Service")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.externalTrafficPolicy
+          value: Local

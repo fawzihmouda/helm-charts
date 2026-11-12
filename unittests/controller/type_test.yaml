@@ -1,0 +1,72 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: controller - types
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: should default to Deployment
+    asserts:
+      - containsDocument:
+          apiVersion: apps/v1
+          kind: Deployment
+          name: release-name
+          any: true
+
+  - it: daemonset should pass
+    set:
+      daemonset:
+        image:
+          repository: ghcr.io/mendhak/http-https-echo
+          tag: 31
+      deployment: null
+    asserts:
+      - containsDocument:
+          apiVersion: apps/v1
+          kind: DaemonSet
+          name: release-name
+          any: true
+
+  - it: statefulset should pass
+    set:
+      statefulset:
+        image:
+          repository: ghcr.io/mendhak/http-https-echo
+          tag: 31
+      deployment: null
+    asserts:
+      - containsDocument:
+          apiVersion: apps/v1
+          kind: StatefulSet
+          name: release-name
+          any: true
+
+  - it: cronjob should pass
+    set:
+      cronjob:
+        schedule: '*/20 * * * *'
+        image:
+          repository: ghcr.io/mendhak/http-https-echo
+          tag: 31
+      deployment: null
+    asserts:
+      - containsDocument:
+          apiVersion: batch/v1
+          kind: CronJob
+          name: release-name
+          any: true
+
+  - it: job should pass
+    set:
+      job:
+        image:
+          repository: ghcr.io/mendhak/http-https-echo
+          tag: 31
+      deployment: null
+    asserts:
+      - containsDocument:
+          apiVersion: batch/v1
+          kind: Job
+          name: release-name
+          any: true

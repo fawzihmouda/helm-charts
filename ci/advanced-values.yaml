@@ -1,0 +1,76 @@
+---
+# yaml-language-server: $schema=../values.schema.json
+deployment:
+  image:
+    repository: ghcr.io/mendhak/http-https-echo
+    tag: 31
+    pullPolicy: IfNotPresent
+
+  env:
+    HTTP_PORT: 8887
+    HTTPS_PORT: 9997
+
+  probes:
+    liveness:
+      enabled: true
+    readiness:
+      enabled: true
+    startup:
+      enabled: true
+
+  additionalContainers:
+    a-container:
+      dependsOn:
+        - main
+        - third-container
+      image:
+        repository: ghcr.io/mendhak/http-https-echo
+        tag: 31
+      env:
+        HTTP_PORT: 8888
+        HTTPS_PORT: 9998
+
+    third-container:
+      dependsOn: main
+      image:
+        repository: ghcr.io/mendhak/http-https-echo
+        tag: 31
+
+service:
+  ports:
+    http:
+      port: 8887
+
+configMaps:
+  config:
+    data:
+      test: value 1
+
+persistence:
+  data:
+    type: configMap
+    identifier: config
+    advancedMounts:
+      # main is the main container
+      main:
+        - path: /data/config.yaml
+          readOnly: false
+          subPath: config.yaml
+      a-container:
+        - path: /appdata/config
+          readOnly: true
+
+rawResources:
+  unsupportedPDB:
+    enabled: true
+    forceRename: pdb
+    manifest:
+      apiVersion: policy/v1
+      kind: PodDisruptionBudget
+      metadata:
+        name: ""
+      spec:
+        minAvailable: 1
+        selector:
+          matchLabels:
+            app.kubernetes.io/instance: "{{ .Release.Name }}"

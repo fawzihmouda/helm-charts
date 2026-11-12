@@ -1,0 +1,20 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: podMonitor - validations
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: fails without a selector when the workload is disabled
+    set:
+      podMonitor:
+        main:
+          podMetricsEndpoints:
+            - port: http
+              path: /metrics
+      deployment:
+        enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "PodMonitor 'main': The workload is disabled, so the PodMonitor has no pods to select. Enable the workload or set 'selector'."

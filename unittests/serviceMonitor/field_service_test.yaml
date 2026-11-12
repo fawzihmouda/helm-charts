@@ -1,0 +1,53 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: serviceMonitor - fields - service
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: a templated service name can be configured
+    set:
+      serviceMonitor:
+        main:
+          service:
+            name: '{{ .Release.Name }}'
+          endpoints:
+            - port: http
+              scheme: http
+              path: /metrics
+              interval: 1m
+              scrapeTimeout: 10s
+    documentSelector:
+      path: $[?(@.kind == "ServiceMonitor")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/name: RELEASE-NAME
+            app.kubernetes.io/service: RELEASE-NAME
+
+  - it: a service identifier can be configured
+    values:
+      - ../_values/service_default.yaml
+    set:
+      serviceMonitor:
+        main:
+          endpoints:
+            - port: http
+              scheme: http
+              path: /metrics
+              interval: 1m
+              scrapeTimeout: 10s
+    documentSelector:
+      path: $[?(@.kind == "ServiceMonitor")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/name: RELEASE-NAME
+            app.kubernetes.io/service: release-name

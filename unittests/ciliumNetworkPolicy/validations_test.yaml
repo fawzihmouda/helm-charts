@@ -1,0 +1,55 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: ciliumNetworkPolicy - validations
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: requires at least one rule direction
+    set:
+      networkpolicies:
+        main:
+          type: cilium
+    asserts:
+      - failedTemplate:
+          errorPattern: values don't meet the specifications of the schema
+
+  - it: rejects nodeSelector on a CiliumNetworkPolicy
+    set:
+      networkpolicies:
+        main:
+          type: cilium
+          nodeSelector:
+            matchLabels:
+              kubernetes.io/os: linux
+          ingress:
+            - {}
+    asserts:
+      - failedTemplate:
+          errorPattern: values don't meet the specifications of the schema
+
+  - it: rejects the singular toController rule field
+    set:
+      networkpolicies:
+        main:
+          type: cilium
+          egress:
+            - toController: main
+    asserts:
+      - failedTemplate:
+          errorPattern: values don't meet the specifications of the schema
+
+
+  - it: fails without an endpointSelector when the workload is disabled
+    set:
+      deployment:
+        enabled: false
+      networkpolicies:
+        main:
+          type: cilium
+          ingress:
+            - {}
+    asserts:
+      - failedTemplate:
+          errorMessage: "CiliumNetworkPolicy 'main': The workload is disabled, so the policy has no pods to select. Enable the workload or set 'endpointSelector'."

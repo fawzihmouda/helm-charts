@@ -1,0 +1,35 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: cronjob - fields - concurrencyPolicy
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+set:
+  cronjob:
+    schedule: '*/20 * * * *'
+    image:
+      repository: ghcr.io/mendhak/http-https-echo
+      tag: 31
+  deployment: null
+tests:
+  - it: default configuration should pass
+    documentSelector:
+      path: $[?(@.kind == "CronJob")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.concurrencyPolicy
+          value: Forbid
+
+  - it: custom configuration should pass
+    set:
+      cronjob:
+        concurrencyPolicy: Test
+    documentSelector:
+      path: $[?(@.kind == "CronJob")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.concurrencyPolicy
+          value: Test

@@ -1,0 +1,297 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: controller - fields - extraSelectorLabels
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: Deployment pod identity includes templated extras but excludes regular metadata
+    set:
+      deployment:
+        extraSelectorLabels:
+          component: '{{ .Release.Name }}'
+          '{{ print "track" }}': stable
+        labels:
+          controller-only: metadata
+        pod:
+          labels:
+            pod-only: metadata
+    asserts:
+      - documentSelector:
+          path: $[?(@.kind == "Deployment")].metadata.name
+          value: release-name
+        equal:
+          path: spec.template.metadata.labels
+          value:
+            app.kubernetes.io/name: RELEASE-NAME
+            app.kubernetes.io/instance: RELEASE-NAME
+            component: RELEASE-NAME
+            track: stable
+            pod-only: metadata
+      - documentSelector:
+          path: $[?(@.kind == "Deployment")].metadata.name
+          value: release-name
+        equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: RELEASE-NAME
+            app.kubernetes.io/instance: RELEASE-NAME
+            component: RELEASE-NAME
+            track: stable
+  - it: StatefulSet pod identity includes templated extras but excludes regular metadata
+    set:
+      statefulset:
+        extraSelectorLabels:
+          component: '{{ .Release.Name }}'
+          '{{ print "track" }}': stable
+        labels:
+          controller-only: metadata
+        pod:
+          labels:
+            pod-only: metadata
+        image:
+          repository: ghcr.io/mendhak/http-https-echo
+          tag: 31
+      deployment: null
+    asserts:
+      - documentSelector:
+          path: $[?(@.kind == "StatefulSet")].metadata.name
+          value: release-name
+        equal:
+          path: spec.template.metadata.labels
+          value:
+            app.kubernetes.io/name: RELEASE-NAME
+            app.kubernetes.io/instance: RELEASE-NAME
+            component: RELEASE-NAME
+            track: stable
+            pod-only: metadata
+      - documentSelector:
+          path: $[?(@.kind == "StatefulSet")].metadata.name
+          value: release-name
+        equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: RELEASE-NAME
+            app.kubernetes.io/instance: RELEASE-NAME
+            component: RELEASE-NAME
+            track: stable
+  - it: DaemonSet pod identity includes templated extras but excludes regular metadata
+    set:
+      daemonset:
+        extraSelectorLabels:
+          component: '{{ .Release.Name }}'
+          '{{ print "track" }}': stable
+        labels:
+          controller-only: metadata
+        pod:
+          labels:
+            pod-only: metadata
+        image:
+          repository: ghcr.io/mendhak/http-https-echo
+          tag: 31
+      deployment: null
+    asserts:
+      - documentSelector:
+          path: $[?(@.kind == "DaemonSet")].metadata.name
+          value: release-name
+        equal:
+          path: spec.template.metadata.labels
+          value:
+            app.kubernetes.io/name: RELEASE-NAME
+            app.kubernetes.io/instance: RELEASE-NAME
+            component: RELEASE-NAME
+            track: stable
+            pod-only: metadata
+      - documentSelector:
+          path: $[?(@.kind == "DaemonSet")].metadata.name
+          value: release-name
+        equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: RELEASE-NAME
+            app.kubernetes.io/instance: RELEASE-NAME
+            component: RELEASE-NAME
+            track: stable
+  - it: Job pod identity includes templated extras but excludes regular metadata
+    set:
+      job:
+        extraSelectorLabels:
+          component: '{{ .Release.Name }}'
+          '{{ print "track" }}': stable
+        labels:
+          controller-only: metadata
+        pod:
+          labels:
+            pod-only: metadata
+        image:
+          repository: ghcr.io/mendhak/http-https-echo
+          tag: 31
+      deployment: null
+    asserts:
+      - documentSelector:
+          path: $[?(@.kind == "Job")].metadata.name
+          value: release-name
+        equal:
+          path: spec.template.metadata.labels
+          value:
+            app.kubernetes.io/name: RELEASE-NAME
+            app.kubernetes.io/instance: RELEASE-NAME
+            component: RELEASE-NAME
+            track: stable
+            pod-only: metadata
+  - it: CronJob pod identity includes templated extras but excludes regular metadata
+    set:
+      cronjob:
+        schedule: '* * * * *'
+        extraSelectorLabels:
+          component: '{{ .Release.Name }}'
+          '{{ print "track" }}': stable
+        labels:
+          controller-only: metadata
+        pod:
+          labels:
+            pod-only: metadata
+        image:
+          repository: ghcr.io/mendhak/http-https-echo
+          tag: 31
+      deployment: null
+    asserts:
+      - documentSelector:
+          path: $[?(@.kind == "CronJob")].metadata.name
+          value: release-name
+        equal:
+          path: spec.jobTemplate.spec.template.metadata.labels
+          value:
+            app.kubernetes.io/name: RELEASE-NAME
+            app.kubernetes.io/instance: RELEASE-NAME
+            component: RELEASE-NAME
+            track: stable
+            pod-only: metadata
+  - it: regular pod and global labels cannot override the canonical selector labels
+    set:
+      defaultPodOptionsStrategy: merge
+      global:
+        propagateGlobalMetadataToPods: true
+        labels:
+          component: global
+          app.kubernetes.io/controller: global
+          global-only: kept
+      defaultPodOptions:
+        labels:
+          component: default
+          default-only: kept
+      deployment:
+        extraSelectorLabels:
+          component: app
+          app.kubernetes.io/controller: identity
+        pod:
+          labels:
+            component: pod
+            app.kubernetes.io/name: pod
+            app.kubernetes.io/instance: pod
+            '{{ print "app.kubernetes.io/controller" }}': pod
+    asserts:
+      - documentSelector:
+          path: $[?(@.kind == "Deployment")].metadata.name
+          value: release-name
+        equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: RELEASE-NAME
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/controller: identity
+            component: app
+      - documentSelector:
+          path: $[?(@.kind == "Deployment")].metadata.name
+          value: release-name
+        equal:
+          path: spec.template.metadata.labels
+          value:
+            app.kubernetes.io/name: RELEASE-NAME
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/controller: identity
+            component: app
+            global-only: kept
+            default-only: kept
+  - it: explicit empty controller extras preserve the existing selector
+    set:
+      deployment:
+        extraSelectorLabels: {}
+    asserts:
+      - documentSelector:
+          path: $[?(@.kind == "Deployment")].metadata.name
+          value: release-name
+        equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: RELEASE-NAME
+            app.kubernetes.io/instance: RELEASE-NAME
+      - documentSelector:
+          path: $[?(@.kind == "Deployment")].metadata.name
+          value: release-name
+        equal:
+          path: spec.template.metadata.labels
+          value:
+            app.kubernetes.io/name: RELEASE-NAME
+            app.kubernetes.io/instance: RELEASE-NAME
+  - it: explicit topology selectors remain intact when controller extras are present
+    set:
+      deployment:
+        extraSelectorLabels:
+          component: app
+        pod:
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector: {}
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchLabels:
+                  app: custom
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: Exists
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchLabels:
+                  app: '{{ .Release.Name }}'
+    asserts:
+      - documentSelector:
+          path: $[?(@.kind == "Deployment")].metadata.name
+          value: release-name
+        equal:
+          path: spec.template.spec.topologySpreadConstraints
+          value:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector: {}
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchLabels:
+                  app: custom
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: Exists
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchLabels:
+                  app: RELEASE-NAME

@@ -1,0 +1,105 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: ciliumNetworkPolicy - metadata
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+set:
+  networkpolicies:
+    main:
+      type: cilium
+      endpointSelector:
+        matchLabels:
+          app.kubernetes.io/name: example
+      ingress:
+        - {}
+tests:
+  - it: renders default metadata
+    documentSelector:
+      path: $[?(@.kind == "CiliumNetworkPolicy")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE
+      - equal:
+          path: spec.endpointSelector
+          value:
+            matchLabels:
+              app.kubernetes.io/name: example
+      - equal:
+          path: metadata.labels
+          value:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: RELEASE-NAME
+            helm.sh/chart: application-1.0.0
+
+  - it: merges custom and global metadata
+    set:
+      networkpolicies:
+        main:
+          labels:
+            policy-label: policy
+          annotations:
+            policy-annotation: policy
+      global:
+        labels:
+          global-label: global
+        annotations:
+          global-annotation: global
+    documentSelector:
+      path: $[?(@.kind == "CiliumNetworkPolicy")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: metadata.labels
+          value:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: RELEASE-NAME
+            global-label: global
+            helm.sh/chart: application-1.0.0
+            policy-label: policy
+      - equal:
+          path: metadata.annotations
+          value:
+            global-annotation: global
+            policy-annotation: policy
+
+  - it: supports resource naming options
+    set:
+      networkpolicies:
+        main:
+          prefix: cilium
+          suffix: ingress
+    asserts:
+      - containsDocument:
+          apiVersion: cilium.io/v2
+          kind: CiliumNetworkPolicy
+          name: cilium-release-name-ingress
+          any: true
+
+  - it: appends the identifier when globally requested
+    set:
+      global:
+        alwaysAppendIdentifierToResourceName: true
+    asserts:
+      - containsDocument:
+          apiVersion: cilium.io/v2
+          kind: CiliumNetworkPolicy
+          name: release-name-main
+          any: true
+
+  - it: supports forceRename with templates
+    set:
+      networkpolicies:
+        main:
+          forceRename: '{{ .Chart.Name }}'
+    asserts:
+      - containsDocument:
+          apiVersion: cilium.io/v2
+          kind: CiliumNetworkPolicy
+          name: application
+          any: true
