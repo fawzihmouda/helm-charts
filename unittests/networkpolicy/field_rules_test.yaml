@@ -30,4 +30,3 @@ tests:
           path: spec.egress
           value:
             - {}
-

@@ -113,4 +113,3 @@ tests:
           path: spec.template.metadata.annotations
           value:
             checksum/configMaps: 66d23d7a53c4e2a523ba85a969696b4ebb78ec5d79ab9c12c210c1569f48511b
-
