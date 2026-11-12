@@ -1,0 +1,74 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: networkPolicy - validations
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: networkpolicy auto-detects single controller when controller not specified
+    set:
+      networkpolicies:
+        main:
+          policyTypes:
+            - Ingress
+          rules: {}
+    documentSelector:
+      path: $[?(@.kind == "NetworkPolicy")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.podSelector
+          value:
+            matchLabels:
+              app.kubernetes.io/instance: RELEASE-NAME
+              app.kubernetes.io/name: RELEASE-NAME
+
+  - it: networkpolicy rejects the singular rule peer controller field
+    set:
+      networkpolicies:
+        main:
+          policyTypes:
+            - Ingress
+          rules:
+            ingress:
+              - from:
+                  - controller: main
+    asserts:
+      - failedTemplate:
+          errorPattern: values don't meet the specifications of the schema
+
+
+  - it: fails without a podSelector when the workload is disabled
+    set:
+      deployment:
+        enabled: false
+      networkpolicies:
+        main:
+          policyTypes:
+            - Ingress
+          rules: {}
+    asserts:
+      - failedTemplate:
+          errorMessage: "NetworkPolicy 'main': The workload is disabled, so the policy has no pods to select. Enable the workload or set 'podSelector'."
+
+  - it: adds extraSelectorLabels to the workload's selector labels
+    set:
+      networkpolicies:
+        main:
+          extraSelectorLabels:
+            tier: web
+          policyTypes:
+            - Ingress
+          rules: {}
+    documentSelector:
+      path: $[?(@.kind == "NetworkPolicy")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.podSelector
+          value:
+            matchLabels:
+              app.kubernetes.io/instance: RELEASE-NAME
+              app.kubernetes.io/name: RELEASE-NAME
+              tier: web

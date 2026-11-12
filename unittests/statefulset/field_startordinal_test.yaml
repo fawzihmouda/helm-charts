@@ -1,0 +1,33 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: statefulset - fields - startOrdinal
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+set:
+  statefulset:
+    image:
+      repository: ghcr.io/mendhak/http-https-echo
+      tag: 31
+  deployment: null
+tests:
+  - it: should not be present by default
+    documentSelector:
+      path: $[?(@.kind == "StatefulSet")].metadata.name
+      value: release-name
+    asserts:
+      - notExists:
+          path: spec.ordinals.start
+
+  - it: can be configured
+    documentSelector:
+      path: $[?(@.kind == "StatefulSet")].metadata.name
+      value: release-name
+    set:
+      statefulset:
+        startOrdinal: 1
+    asserts:
+      - equal:
+          path: spec.ordinals.start
+          value: 1

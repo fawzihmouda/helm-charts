@@ -1,0 +1,22 @@
+---
+serviceAccount:
+  default: {}
+rbac:
+  roles:
+    defaultRole:
+      type: Role
+      rules:
+        - apiGroups:
+            - ''
+          resources:
+            - pods
+          verbs:
+            - get
+            - list
+  bindings:
+    defaultBinding:
+      type: RoleBinding
+      roleRef:
+        identifier: defaultRole
+      subjects:
+        - identifier: default

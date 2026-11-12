@@ -1,0 +1,119 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: container - fields - image
+templates:
+  - common.yaml
+tests:
+  - it: string tag should pass
+    values:
+      - ../_values/deployment_default.yaml
+    set:
+      deployment:
+        image:
+          tag: latest
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/mendhak/http-https-echo:latest
+
+  - it: integer tag should pass
+    values:
+      - ../_values/deployment_default.yaml
+    set:
+      deployment:
+        image:
+          tag: 1.23
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/mendhak/http-https-echo:1.23
+
+  - it: template tag should pass
+    values:
+      - ../_values/deployment_default.yaml
+    set:
+      variables:
+        image:
+          repository: ghcr.io/mendhak/http-https-echo
+          tag: 1.0.0
+      deployment:
+        image:
+          repository: '{{ .Values.variables.image.repository }}'
+          tag: '{{ .Values.variables.image.tag }}'
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/mendhak/http-https-echo:1.0.0
+
+  - it: tag from defaultContainerOptions should pass
+    set:
+      deployment:
+        defaultContainerOptions:
+          image:
+            repository: ghcr.io/mendhak/http-https-echo
+            tag: 32
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/mendhak/http-https-echo:32
+
+  - it: tag from defaultContainerOptions with container override should pass
+    set:
+      deployment:
+        defaultContainerOptions:
+          image:
+            repository: ghcr.io/mendhak/http-https-echo
+            tag: 32
+        image:
+          repository: ghcr.io/mendhak/http-https-echo-override
+          tag: 33
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/mendhak/http-https-echo-override:33
+
+  - it: tag with digest should pass
+    values:
+      - ../_values/deployment_default.yaml
+    set:
+      deployment:
+        image:
+          tag: latest@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/mendhak/http-https-echo:latest@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+  - it: explicit digest should pass
+    values:
+      - ../_values/deployment_default.yaml
+    set:
+      deployment:
+        image:
+          tag: latest
+          digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/mendhak/http-https-echo:latest@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

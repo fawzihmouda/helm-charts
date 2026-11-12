@@ -1,0 +1,40 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: container - fields - nameOverride
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: with explicit name should pass
+    set:
+      deployment:
+        nameOverride: template-test
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: template-test
+
+  - it: with implicit name should pass
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: RELEASE-NAME
+
+  - it: with templated name should pass
+    set:
+      deployment:
+        nameOverride: '{{ .Release.Name }}-container'
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: RELEASE-NAME-container

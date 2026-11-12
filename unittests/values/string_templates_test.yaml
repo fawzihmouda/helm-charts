@@ -1,0 +1,270 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: values - centralized string templates
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: evaluates nested strings and list items while preserving native scalars
+    set:
+      deployment:
+        replicas: 3
+        pod:
+          hostUsers: true
+          annotations:
+            nested: '{{ .Release.Name }}-nested'
+          imagePullSecrets:
+            - name: '{{ .Release.Name }}-pull'
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 3
+      - equal:
+          path: spec.template.metadata.annotations.nested
+          value: RELEASE-NAME-nested
+      - equal:
+          path: spec.template.spec.hostUsers
+          value: true
+      - equal:
+          path: spec.template.spec.imagePullSecrets
+          value:
+            - name: RELEASE-NAME-pull
+
+  - it: preserves an explicit null value
+    set:
+      deployment:
+        replicas: null
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - notExists:
+          path: spec.replicas
+
+  - it: keeps templated scalar text as strings
+    set:
+      deployment:
+        pod:
+          annotations:
+            booleanText: '{{ true }}'
+            integerText: '{{ 7 }}'
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations.booleanText
+          value: "true"
+      - equal:
+          path: spec.template.metadata.annotations.integerText
+          value: "7"
+
+  - it: evaluates annotation and label map keys
+    set:
+      deployment:
+        annotations:
+          controller-{{ .Release.Name }}: controller
+        labels:
+          controller-{{ .Release.Name }}: controller
+        pod:
+          annotations:
+            pod-{{ .Release.Name }}: pod
+          labels:
+            pod-{{ .Release.Name }}: pod
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - isSubset:
+          path: metadata.annotations
+          content:
+            controller-RELEASE-NAME: controller
+      - isSubset:
+          path: metadata.labels
+          content:
+            controller-RELEASE-NAME: controller
+      - isSubset:
+          path: spec.template.metadata.annotations
+          content:
+            pod-RELEASE-NAME: pod
+      - isSubset:
+          path: spec.template.metadata.labels
+          content:
+            pod-RELEASE-NAME: pod
+
+  - it: evaluates default pod option annotation and label map keys
+    set:
+      defaultPodOptions:
+        annotations:
+          default-pod-{{ .Release.Name }}: default
+        labels:
+          default-pod-{{ .Release.Name }}: default
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - isSubset:
+          path: spec.template.metadata.annotations
+          content:
+            default-pod-RELEASE-NAME: default
+      - isSubset:
+          path: spec.template.metadata.labels
+          content:
+            default-pod-RELEASE-NAME: default
+
+  - it: evaluates nested templates progressively
+    set:
+      global:
+        templateEvaluation:
+          passes: 5
+        labels:
+          first: '{{ .Values.global.labels.second }}'
+          second: '{{ .Values.global.labels.third }}'
+          third: '{{ .Release.Name }}'
+      deployment:
+        pod:
+          annotations:
+            nested: '{{ .Values.global.labels.first }}'
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations.nested
+          value: RELEASE-NAME
+
+  - it: limits evaluation to the configured number of passes
+    set:
+      global:
+        templateEvaluation:
+          passes: 2
+        labels:
+          first: '{{ .Values.global.labels.second }}'
+          second: '{{ .Values.global.labels.third }}'
+          third: '{{ .Release.Name }}'
+      deployment:
+        pod:
+          annotations:
+            nested: '{{ .Values.global.labels.first }}'
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations.nested
+          value: "{{ .Values.global.labels.third }}"
+
+  - it: excludes paths from template evaluation
+    set:
+      global:
+        templateEvaluation:
+          excludePaths:
+            -   - deployment
+                - env
+                - VPN_PORT_FORWARDING_UP_COMMAND
+      deployment:
+        env:
+          VPN_PORT_FORWARDING_UP_COMMAND: command --port {{PORTS}}
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[0]
+          value:
+            name: VPN_PORT_FORWARDING_UP_COMMAND
+            value: "command --port {{PORTS}}"
+
+  - it: excludes descendants of a non-leaf path
+    set:
+      global:
+        templateEvaluation:
+          excludePaths:
+            -   - deployment
+                - pod
+                - annotations
+      deployment:
+        pod:
+          annotations:
+            app.example.com/template: '{{VALUE}}'
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["app.example.com/template"]
+          value: "{{VALUE}}"
+
+  - it: excludes paths containing list indexes
+    set:
+      global:
+        templateEvaluation:
+          excludePaths:
+            -   - deployment
+                - pod
+                - imagePullSecrets
+                - '0'
+                - name
+      deployment:
+        pod:
+          imagePullSecrets:
+            - name: '{{SECRET_NAME}}'
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.imagePullSecrets[0].name
+          value: '{{SECRET_NAME}}'
+
+  - it: excludes paths of additional containers
+    set:
+      global:
+        templateEvaluation:
+          excludePaths:
+            -   - deployment
+                - additionalContainers
+                - shipper
+                - env
+      deployment:
+        additionalContainers:
+          shipper:
+            image:
+              repository: fluent/fluent-bit
+              tag: '3.2'
+            env:
+              PATTERN: '{{MATCH}}'
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].env[0].value
+          value: '{{MATCH}}'
+
+  - it: defers ExternalSecret target template data expressions
+    set:
+      externalSecrets:
+        templated:
+          target:
+            template:
+              data:
+                connection: postgres://{{ .username }}:{{ .password }}@database
+          data:
+            - secretKey: username
+              remoteRef:
+                key: database-credentials
+              sourceRef:
+                storeRef:
+                  name: provider-store
+    documentSelector:
+      path: $[?(@.kind == "ExternalSecret")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.target.template.data.connection
+          value: "postgres://{{ .username }}:{{ .password }}@database"

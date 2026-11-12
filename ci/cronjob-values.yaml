@@ -1,0 +1,15 @@
+---
+# yaml-language-server: $schema=../values.schema.json
+cronjob:
+  timeZone: UTC
+  schedule: "*/20 * * * *"
+  image:
+    repository: ghcr.io/mendhak/http-https-echo
+    tag: 31
+    pullPolicy: IfNotPresent
+
+configMaps:
+  config:
+    enabled: true
+    data:
+      test: value 1

@@ -1,0 +1,21 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: serviceMonitor - validations
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: automatic service determination should fail when no service is enabled
+    set:
+      serviceMonitor:
+        main:
+          endpoints:
+            - port: http
+              scheme: http
+              path: /metrics
+              interval: 1m
+              scrapeTimeout: 10s
+    asserts:
+      - failedTemplate:
+          errorMessage: "ServiceMonitor 'main': Set 'service.name', 'serviceName' or 'selector' because the chart creates no Service."

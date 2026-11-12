@@ -1,0 +1,80 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: service - validations
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: automatic controller determination should fail when no controller is enabled
+    set:
+      service:
+        ports:
+          http:
+            port: 8080
+      deployment:
+        enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "Service: The workload is disabled, so the Service has nothing to send traffic to. Enable the workload or set 'service.enabled' to false."
+
+  - it: no ports enabled should fail
+    values:
+      - ../_values/service_default.yaml
+    set:
+      service:
+        ports:
+          http:
+            enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "Service: No ports are enabled. At least one port must be enabled for service type 'ClusterIP'. Add ports under 'service.ports' in your values."
+
+  - it: duplicate port number and protocol should fail
+    values:
+      - ../_values/service_default.yaml
+    set:
+      service:
+        ports:
+          http:
+            port: 8080
+          metrics:
+            port: 8080
+    asserts:
+      - failedTemplate:
+          errorMessage: "Duplicate port 8080/TCP found in the Service. (ports: 'http' and 'metrics')"
+
+  - it: same port number with different protocols should pass
+    values:
+      - ../_values/service_default.yaml
+    set:
+      service:
+        ports:
+          http:
+            port: 8080
+          udp:
+            port: 8080
+            protocol: UDP
+    documentSelector:
+      path: $[?(@.kind == "Service")].metadata.name
+      value: release-name
+    asserts:
+      - isKind:
+          of: Service
+
+  - it: non-overlapping ports should pass
+    values:
+      - ../_values/service_default.yaml
+    set:
+      service:
+        ports:
+          http:
+            port: 8080
+          metrics:
+            port: 9090
+    documentSelector:
+      path: $[?(@.kind == "Service")].metadata.name
+      value: release-name
+    asserts:
+      - isKind:
+          of: Service

@@ -1,0 +1,54 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: misc - render order
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  # Unsorted map keys gave a random order on each run, so helm diff showed
+  # changes that weren't there. Twelve routes, so the map is big enough for Go to shuffle it well.
+  - it: routes render sorted by identifier
+    set:
+      service:
+        ports:
+          http:
+            port: 80
+      route:
+        l: {parentRefs: [{name: gw}]}
+        k: {parentRefs: [{name: gw}]}
+        j: {parentRefs: [{name: gw}]}
+        i: {parentRefs: [{name: gw}]}
+        h: {parentRefs: [{name: gw}]}
+        g: {parentRefs: [{name: gw}]}
+        f: {parentRefs: [{name: gw}]}
+        e: {parentRefs: [{name: gw}]}
+        d: {parentRefs: [{name: gw}]}
+        c: {parentRefs: [{name: gw}]}
+        b: {parentRefs: [{name: gw}]}
+        a: {parentRefs: [{name: gw}]}
+    asserts:
+      - documentIndex: 3
+        equal: {path: metadata.name, value: release-name-a}
+      - documentIndex: 4
+        equal: {path: metadata.name, value: release-name-b}
+      - documentIndex: 5
+        equal: {path: metadata.name, value: release-name-c}
+      - documentIndex: 6
+        equal: {path: metadata.name, value: release-name-d}
+      - documentIndex: 7
+        equal: {path: metadata.name, value: release-name-e}
+      - documentIndex: 8
+        equal: {path: metadata.name, value: release-name-f}
+      - documentIndex: 9
+        equal: {path: metadata.name, value: release-name-g}
+      - documentIndex: 10
+        equal: {path: metadata.name, value: release-name-h}
+      - documentIndex: 11
+        equal: {path: metadata.name, value: release-name-i}
+      - documentIndex: 12
+        equal: {path: metadata.name, value: release-name-j}
+      - documentIndex: 13
+        equal: {path: metadata.name, value: release-name-k}
+      - documentIndex: 14
+        equal: {path: metadata.name, value: release-name-l}

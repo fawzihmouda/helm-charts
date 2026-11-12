@@ -1,0 +1,114 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: deployment - metadata - name
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: name defaults to chart fullName
+    asserts:
+      - containsDocument:
+          kind: Deployment
+          apiVersion: apps/v1
+          name: release-name
+          any: true
+
+  - it: name includes identifier when alwaysAppendIdentifierToResourceName is enabled
+    set:
+      global:
+        alwaysAppendIdentifierToResourceName: true
+    asserts:
+      - containsDocument:
+          kind: Deployment
+          apiVersion: apps/v1
+          name: release-name-main
+          any: true
+
+  - it: forceRename
+    set:
+      deployment:
+        forceRename: forceRename
+    asserts:
+      - containsDocument:
+          kind: Deployment
+          apiVersion: apps/v1
+          name: forcerename
+          any: true
+
+  - it: forceRename with template
+    set:
+      deployment:
+        forceRename: '{{ .Chart.Name }}'
+    asserts:
+      - containsDocument:
+          kind: Deployment
+          apiVersion: apps/v1
+          name: application
+          any: true
+
+  - it: prefix
+    set:
+      deployment:
+        prefix: prefix
+    asserts:
+      - containsDocument:
+          kind: Deployment
+          apiVersion: apps/v1
+          name: prefix-release-name
+          any: true
+
+  - it: prefix with template
+    set:
+      deployment:
+        prefix: '{{ .Chart.Name }}-prefix'
+    asserts:
+      - containsDocument:
+          kind: Deployment
+          apiVersion: apps/v1
+          name: application-prefix-release-name
+          any: true
+
+  - it: suffix
+    set:
+      deployment:
+        suffix: suffix
+    asserts:
+      - containsDocument:
+          kind: Deployment
+          apiVersion: apps/v1
+          name: release-name-suffix
+          any: true
+
+  - it: suffix with template
+    set:
+      deployment:
+        suffix: '{{ .Chart.Name }}-suffix'
+    asserts:
+      - containsDocument:
+          kind: Deployment
+          apiVersion: apps/v1
+          name: release-name-application-suffix
+          any: true
+
+  - it: both prefix and suffix
+    set:
+      deployment:
+        prefix: prefix
+        suffix: suffix
+    asserts:
+      - containsDocument:
+          kind: Deployment
+          apiVersion: apps/v1
+          name: prefix-release-name-suffix
+          any: true
+
+  - it: prefix, suffix and forceRename (illegal combination)
+    set:
+      deployment:
+        forceRename: forceRename
+        prefix: prefix
+        suffix: suffix
+    asserts:
+      - failedTemplate:
+          errorPattern: "values don't meet the specifications of the schema"

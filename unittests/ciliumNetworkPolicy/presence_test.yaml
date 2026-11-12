@@ -1,0 +1,67 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: CiliumNetworkPolicy - presence
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: no ciliumNetworkPolicy is rendered by default
+    asserts:
+      - not: true
+        containsDocument:
+          apiVersion: cilium.io/v2
+          kind: CiliumNetworkPolicy
+          any: true
+
+  - it: ciliumNetworkPolicy entries are enabled by default
+    set:
+      networkpolicies:
+        main:
+          type: cilium
+          ingress:
+            - {}
+    asserts:
+      - containsDocument:
+          apiVersion: cilium.io/v2
+          kind: CiliumNetworkPolicy
+          name: release-name
+          any: true
+
+  - it: ciliumNetworkPolicy can be disabled
+    set:
+      networkpolicies:
+        main:
+          type: cilium
+          enabled: false
+          ingress:
+            - {}
+    asserts:
+      - not: true
+        containsDocument:
+          apiVersion: cilium.io/v2
+          kind: CiliumNetworkPolicy
+          any: true
+
+  - it: multiple ciliumNetworkPolicies can be rendered
+    set:
+      networkpolicies:
+        ingress:
+          type: cilium
+          ingress:
+            - {}
+        egress:
+          type: cilium
+          egress:
+            - {}
+    asserts:
+      - containsDocument:
+          apiVersion: cilium.io/v2
+          kind: CiliumNetworkPolicy
+          name: release-name-ingress
+          any: true
+      - containsDocument:
+          apiVersion: cilium.io/v2
+          kind: CiliumNetworkPolicy
+          name: release-name-egress
+          any: true

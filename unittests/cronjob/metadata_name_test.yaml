@@ -1,0 +1,121 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: cronjob - metadata - name
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+set:
+  cronjob:
+    schedule: '*/20 * * * *'
+    image:
+      repository: ghcr.io/mendhak/http-https-echo
+      tag: 31
+  deployment: null
+tests:
+  - it: name defaults to chart fullName
+    asserts:
+      - containsDocument:
+          kind: CronJob
+          apiVersion: batch/v1
+          name: release-name
+          any: true
+
+  - it: name includes identifier when alwaysAppendIdentifierToResourceName is enabled
+    set:
+      global:
+        alwaysAppendIdentifierToResourceName: true
+    asserts:
+      - containsDocument:
+          kind: CronJob
+          apiVersion: batch/v1
+          name: release-name-main
+          any: true
+
+  - it: forceRename
+    set:
+      cronjob:
+        forceRename: forceRename
+    asserts:
+      - containsDocument:
+          kind: CronJob
+          apiVersion: batch/v1
+          name: forcerename
+          any: true
+
+  - it: forceRename with template
+    set:
+      cronjob:
+        forceRename: '{{ .Chart.Name }}'
+    asserts:
+      - containsDocument:
+          kind: CronJob
+          apiVersion: batch/v1
+          name: application
+          any: true
+
+  - it: prefix
+    set:
+      cronjob:
+        prefix: prefix
+    asserts:
+      - containsDocument:
+          kind: CronJob
+          apiVersion: batch/v1
+          name: prefix-release-name
+          any: true
+
+  - it: prefix with template
+    set:
+      cronjob:
+        prefix: '{{ .Chart.Name }}-prefix'
+    asserts:
+      - containsDocument:
+          kind: CronJob
+          apiVersion: batch/v1
+          name: application-prefix-release-name
+          any: true
+
+  - it: suffix
+    set:
+      cronjob:
+        suffix: suffix
+    asserts:
+      - containsDocument:
+          kind: CronJob
+          apiVersion: batch/v1
+          name: release-name-suffix
+          any: true
+
+  - it: suffix with template
+    set:
+      cronjob:
+        suffix: '{{ .Chart.Name }}-suffix'
+    asserts:
+      - containsDocument:
+          kind: CronJob
+          apiVersion: batch/v1
+          name: release-name-application-suffix
+          any: true
+
+  - it: both prefix and suffix
+    set:
+      cronjob:
+        prefix: prefix
+        suffix: suffix
+    asserts:
+      - containsDocument:
+          kind: CronJob
+          apiVersion: batch/v1
+          name: prefix-release-name-suffix
+          any: true
+
+  - it: prefix, suffix and forceRename (illegal combination)
+    set:
+      cronjob:
+        forceRename: forceRename
+        prefix: prefix
+        suffix: suffix
+    asserts:
+      - failedTemplate:
+          errorPattern: "values don't meet the specifications of the schema"

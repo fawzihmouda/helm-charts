@@ -1,0 +1,72 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: rawResource - presence
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+set:
+  rawResources:
+    endpoint:
+      manifest:
+        apiVersion: v1
+        kind: Endpoint
+        spec:
+          subsets:
+            - addresses:
+                - ip: 127.0.0.1
+              ports:
+                - name: '{{ .Release.Name }}'
+                  port: 443
+                  protocol: TCP
+tests:
+  - it: raw resources are enabled by default
+    documentSelector:
+      path: $[?(@.kind == "Endpoint")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.subsets[0].addresses[0].ip
+          value: 127.0.0.1
+
+  - it: raw resources can be disabled
+    set:
+      rawResources:
+        endpoint:
+          enabled: false
+    asserts:
+      - not: true
+        containsDocument:
+          kind: Endpoint
+          apiVersion: v1
+          any: true
+
+  - it: spec can render Helm template
+    documentSelector:
+      path: $[?(@.kind == "Endpoint")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.subsets[0].ports[0].name
+          value: RELEASE-NAME
+
+  - it: user-provided identifier in manifest is preserved (not stripped)
+    set:
+      rawResources:
+        endpoint:
+          manifest:
+            spec:
+              subsets:
+                - addresses:
+                    - ip: 127.0.0.1
+                  ports:
+                    - port: 443
+                      protocol: TCP
+            identifier: my-custom-identifier
+    documentSelector:
+      path: $[?(@.kind == "Endpoint")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: identifier
+          value: my-custom-identifier

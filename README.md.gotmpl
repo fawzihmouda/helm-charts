@@ -1,0 +1,153 @@
+# application
+
+application deploys your applications to your Kubernetes cluster as Deployments, StatefulSets, DaemonSets, CronJobs or Jobs. Each release runs one of them, set under a key named after its type.
+
+application can also create the resources the applications need, including:
+Services, Gateway API routes and ListenerSets, ServiceAccounts with Roles and RoleBindings, ConfigMaps, Secrets, ExternalSecrets, PersistentVolumeClaims, NetworkPolicies, Cilium network policies, ServiceMonitors and PodMonitors.
+
+## Prerequisites
+
+Make sure you are using Kubernetes 1.30 or later.
+
+## Installing the Chart
+
+To install the chart with the release name `my-app`:
+
+```console
+helm repo add fawzihmouda https://fawzihmouda.github.io/helm-charts
+
+helm install \
+  my-app fawzihmouda/application \
+  --namespace my-app \
+  --create-namespace \
+  --version {{ template "chart.version" . }} \
+  --set deployment.image.repository=ghcr.io/example/my-app \
+  --set deployment.image.tag=1.0.0
+```
+
+The only required values are one workload type key, such as `deployment`, and the image repository and tag or digest of each container.
+
+### Workload layout
+
+The top-level key names the workload type: `deployment`, `statefulset`, `daemonset`, `job` or `cronjob`. A release sets exactly one of them. The chart rejects the old `controllers` key.
+
+```yaml
+deployment:
+  replicas: 2
+  strategy: RollingUpdate
+  image:
+    repository: ghcr.io/example/my-app
+    tag: 1.0.0
+  additionalContainers:
+    shipper:
+      image:
+        repository: fluent/fluent-bit
+        tag: "3.2"
+service:
+  ports:
+    http:
+      port: 80
+```
+
+- The main container's fields, such as `image`, `env`, `probes` and `resources`, sit directly under the type key. The main container takes the release name.
+- `additionalContainers` holds sidecars and `initContainers` holds init containers, each keyed by name. The name `main` is reserved: `dependsOn` and `persistence.<name>.advancedMounts` use it to refer to the main container.
+- Type options sit under the type key too, such as `schedule` for a CronJob or `volumeClaimTemplates` for a StatefulSet.
+- `service` configures the one Service, which targets the workload.
+- Setting a type key to `null`, such as `--set deployment=null`, unsets a type that a values file sets.
+
+More information on the values and how to configure them can be found in the [Configuration](#configuration) section.
+
+For information on how to deploy a resource the chart doesn't create, such as an Ingress, see `rawResources` in the [Configuration](#configuration) section.
+
+> **Tip**: List all releases using `helm list`
+
+## Uninstalling the Chart
+
+To uninstall/delete the `my-app` release:
+
+```console
+helm delete my-app --namespace my-app
+```
+
+The command removes all the Kubernetes components associated with the chart, except resources annotated `helm.sh/resource-policy: keep`, and deletes the release.
+
+If you want to completely uninstall the application from your cluster, you will also need to
+delete the PersistentVolumeClaims of a StatefulSet, which Helm doesn't delete.
+
+> This will remove the data of every pod of the release:
+>
+> ```console
+> kubectl delete pvc \
+>   --namespace my-app \
+>   --selector app.kubernetes.io/instance=my-app
+> ```
+
+## Configuration
+<!-- AUTO-GENERATED -->
+{{- /* Renders a helm-docs default as YAML with 2-space indents. helm-docs' toYaml indents
+a nested block by 4 but a list item's content by 2, so each line's indent comes from a
+stack of the open blocks: a deeper line opens a block 2 past its parent, and "- " opens
+the item's content 2 past the dash. */}}
+{{- define "readme.yaml" }}
+{{- $stack := list (dict "old" 0 "new" 0) }}
+{{- range .value | trimPrefix "`" | trimSuffix "`" | fromJson | toYaml | splitList "\n" }}
+{{- $text := regexReplaceAll "^ +" . "" }}
+{{- $old := sub (len .) (len $text) }}
+{{- $open := list }}
+{{- range $stack }}
+{{- if le (int .old) (int $old) }}
+{{- $open = append $open . }}
+{{- end }}
+{{- end }}
+{{- $stack = $open }}
+{{- $new := int (last $stack).new }}
+{{- if gt (int $old) (int (last $stack).old) }}
+{{- $new = add $new 2 }}
+{{- $stack = append $stack (dict "old" $old "new" $new) }}
+{{- end }}
+{{- if hasPrefix "- " $text }}
+{{- $stack = append $stack (dict "old" (add $old 2) "new" (add $new 2)) }}
+{{- end }}
+{{ $.prefix }}{{ repeat (int $new) " " }}{{ $text }}
+{{- end }}
+{{- end }}
+{{- $sections := .Sections.Sections }}
+{{- with .Sections.DefaultSection.SectionItems }}
+{{- $sections = prepend $sections (dict "SectionName" "Parameters" "SectionItems" .) }}
+{{- end }}
+{{- range $sections }}
+
+### {{ .SectionName }}
+{{- range .SectionItems }}
+
+#### **{{ .Key }}** ~ `{{ .Type }}`
+{{- if .AutoDefault }}
+> Default value: {{ .AutoDefault }}
+{{- else if ne .Default "`nil`" }}
+> Default value:
+> ```yaml
+{{- template "readme.yaml" (dict "value" .Default "prefix" "> ") }}
+> ```
+{{- end }}
+
+{{ if .Description }}{{ .Description }}{{ else }}{{ .AutoDescription }}{{ end }}
+{{- end }}
+{{- end }}
+
+<!-- /AUTO-GENERATED -->
+### Default Security Contexts
+
+The chart sets no pod or container security context by default. Set `defaultPodOptions.securityContext` for every pod, and `securityContext` on each container.
+
+### Assigning Values
+
+Specify each parameter using the `--set key=value[,key=value]` argument to `helm install`.
+
+Alternatively, a YAML file that specifies the values for the above parameters can be provided while installing the chart. For example,
+
+```console
+$ helm install my-app -f values.yaml fawzihmouda/application
+```
+> **Tip**: You can use the default [values.yaml](https://github.com/fawzihmouda/helm-charts/blob/main/charts/application/values.yaml)
+
+`values.schema.json` checks the values of each resource. It accepts unknown top-level keys, and the chart ignores them.

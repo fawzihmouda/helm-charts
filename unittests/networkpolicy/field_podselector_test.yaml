@@ -1,0 +1,161 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: networkPolicy - fields - podSelector
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: networkpolicy targets the correct controller by identifier
+    set:
+      networkpolicies:
+        main:
+          policyTypes:
+            - Ingress
+            - Egress
+          rules: {}
+    documentSelector:
+      path: $[?(@.kind == "NetworkPolicy")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.podSelector
+          value:
+            matchLabels:
+              app.kubernetes.io/instance: RELEASE-NAME
+              app.kubernetes.io/name: RELEASE-NAME
+
+  - it: networkpolicy auto-targets single controller when none specified
+    set:
+      networkpolicies:
+        main:
+          policyTypes:
+            - Ingress
+            - Egress
+          rules: {}
+    documentSelector:
+      path: $[?(@.kind == "NetworkPolicy")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.podSelector
+          value:
+            matchLabels:
+              app.kubernetes.io/instance: RELEASE-NAME
+              app.kubernetes.io/name: RELEASE-NAME
+
+  - it: networkpolicy supports controller with extraSelectorLabels
+    set:
+      networkpolicies:
+        main:
+          extraSelectorLabels:
+            custom-label: custom-value
+          policyTypes:
+            - Ingress
+            - Egress
+          rules: {}
+    documentSelector:
+      path: $[?(@.kind == "NetworkPolicy")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.podSelector
+          value:
+            matchLabels:
+              custom-label: custom-value
+              app.kubernetes.io/instance: RELEASE-NAME
+              app.kubernetes.io/name: RELEASE-NAME
+
+  - it: auto-targeting controller with extraSelectorLabels is supported
+    set:
+      networkpolicies:
+        main:
+          extraSelectorLabels:
+            custom-label: custom-value
+          policyTypes:
+            - Ingress
+            - Egress
+          rules: {}
+    documentSelector:
+      path: $[?(@.kind == "NetworkPolicy")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.podSelector
+          value:
+            matchLabels:
+              custom-label: custom-value
+              app.kubernetes.io/instance: RELEASE-NAME
+              app.kubernetes.io/name: RELEASE-NAME
+
+  - it: extra selector labels take precedence over generated selector labels
+    set:
+      networkpolicies:
+        main:
+          extraSelectorLabels:
+            app.kubernetes.io/controller: overridden
+          policyTypes:
+            - Ingress
+            - Egress
+          rules: {}
+    documentSelector:
+      path: $[?(@.kind == "NetworkPolicy")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.podSelector
+          value:
+            matchLabels:
+              app.kubernetes.io/controller: overridden
+              app.kubernetes.io/instance: RELEASE-NAME
+              app.kubernetes.io/name: RELEASE-NAME
+
+  - it: networkpolicy supports custom podSelector with matchLabels
+    set:
+      networkpolicies:
+        main:
+          policyTypes:
+            - Ingress
+            - Egress
+          podSelector:
+            matchLabels:
+              role: frontend
+          rules: {}
+    documentSelector:
+      path: $[?(@.kind == "NetworkPolicy")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.podSelector
+          value:
+            matchLabels:
+              role: frontend
+
+  - it: networkpolicy supports custom podSelector with matchExpressions
+    set:
+      networkpolicies:
+        main:
+          policyTypes:
+            - Ingress
+            - Egress
+          podSelector:
+            matchExpressions:
+              - key: tier
+                operator: In
+                values:
+                  - frontend
+                  - backend
+          rules: {}
+    documentSelector:
+      path: $[?(@.kind == "NetworkPolicy")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.podSelector
+          value:
+            matchExpressions:
+              - key: tier
+                operator: In
+                values:
+                  - frontend
+                  - backend

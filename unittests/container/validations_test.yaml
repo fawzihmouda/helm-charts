@@ -1,0 +1,31 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: container - validations
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: image repository is required
+    set:
+      deployment:
+        additionalContainers:
+          test:
+            image:
+              repository: ''
+              tag: test
+    asserts:
+      - failedTemplate:
+          errorMessage: "Container 'test': Image repository is required. Specify the repository under 'deployment.additionalContainers.test.image.repository'."
+
+  - it: image tag is required
+    set:
+      deployment:
+        additionalContainers:
+          test:
+            image:
+              repository: test
+              tag: ''
+    asserts:
+      - failedTemplate:
+          errorMessage: "Container 'test': Either image tag or digest is required. Specify a tag or digest under 'deployment.additionalContainers.test.image'."

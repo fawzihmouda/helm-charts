@@ -1,0 +1,41 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: pod - fields - enableServiceLinks
+templates:
+  - common.yaml
+values:
+  - ../_values/deployment_default.yaml
+tests:
+  - it: default should pass
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.enableServiceLinks
+          value: false
+
+  - it: enabled in defaultPodOptions should pass
+    set:
+      defaultPodOptions:
+        enableServiceLinks: true
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.enableServiceLinks
+          value: true
+
+  - it: enabled in pod options should pass
+    set:
+      deployment:
+        pod:
+          enableServiceLinks: true
+    documentSelector:
+      path: $[?(@.kind == "Deployment")].metadata.name
+      value: release-name
+    asserts:
+      - equal:
+          path: spec.template.spec.enableServiceLinks
+          value: true
