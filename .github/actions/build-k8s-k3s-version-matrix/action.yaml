@@ -1,0 +1,108 @@
+---
+name: Build Kubernetes/K3s versions
+description: Build a list of k8s/k3s versions from a minimum k8s version
+inputs:
+  min_k8s_version:
+    description: Minimum Kubernetes version
+    required: false
+    default: "1.31"
+  github_token:
+    description: GitHub token used for API requests
+    required: true
+outputs:
+  versions:
+    description: JSON encoded list of k8s/k3s versions
+    value: ${{ steps.build.outputs.versions }}
+runs:
+  using: "composite"
+  steps:
+    - name: Create package.json
+      shell: bash
+      run: |-
+        cat > package.json << 'EOF'
+        {
+          "dependencies": {
+            "semver": "^7.7.2"
+          }
+        }
+        EOF
+
+    - name: Setup Node
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        cache: npm
+        cache-dependency-path: package.json
+        node-version: 24.x
+
+    - name: Setup Node Dependencies
+      shell: bash
+      run: |-
+        npm install
+
+    - name: Build matrix
+      id: build
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        MIN_K8S_VERSION: ${{ inputs.min_k8s_version }}
+      with:
+        github-token: ${{ inputs.github_token }}
+        script: |-
+          const semver = require('semver');
+
+          const minK8sVersion = process.env.MIN_K8S_VERSION ?? '';
+          const minVersion = semver.coerce(minK8sVersion);
+          if (!minVersion) {
+            throw new Error(`Invalid minimum version: ${minK8sVersion}`);
+          }
+
+          const releases = (await github.paginate(
+            github.rest.repos.listReleases,
+            {
+              owner: 'k3s-io',
+              repo: 'k3s',
+              per_page: 100,
+            }
+          )).slice(0, 300);
+
+          const candidates = releases
+            .filter((release) => release.draft === false)
+            .filter((release) => release.prerelease === false)
+            .map((release) => {
+              const tagName = release.tag_name || '';
+              const parsed = semver.parse(tagName, { loose: true });
+              if (!parsed) {
+                return null;
+              }
+
+              return {
+                release,
+                parsed,
+              };
+            })
+            .filter(Boolean)
+            .filter(({ parsed }) => semver.gte(parsed, minVersion));
+
+          const latestByMinor = new Map();
+          for (const item of candidates) {
+            const key = `${item.parsed.major}.${item.parsed.minor}`;
+            const publishedAt = new Date(item.release.published_at ?? 0).getTime();
+            const current = latestByMinor.get(key);
+            if (!current) {
+              latestByMinor.set(key, { ...item, publishedAt });
+              continue;
+            }
+
+            if (publishedAt >= current.publishedAt) {
+              latestByMinor.set(key, { ...item, publishedAt });
+            }
+          }
+
+          const versions = Array.from(latestByMinor.values())
+            .sort((a, b) => a.publishedAt - b.publishedAt)
+            .map((item) => ({
+              k8s_version: `v${item.parsed.major}.${item.parsed.minor}.${item.parsed.patch}`,
+              k3s_tag: (item.release.tag_name || '').replace(/\+/g, '-'),
+            }));
+
+          core.setOutput('versions', JSON.stringify(versions));
+          console.log(JSON.stringify(versions));

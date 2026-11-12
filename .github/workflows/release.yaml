@@ -1,0 +1,99 @@
+---
+name: "Release: Chart"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - Chart.yaml
+      - values.yaml
+      - values.schema.json
+      - "templates/**"
+      - README.md
+      - .helmignore
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish-gh-pages:
+    name: Publish chart to GitHub Pages
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Mise and required tools
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          cache_key: "mise-v1-{{file_hash}}"
+
+      # Package before the gh-pages checkout, so that checkout isn't packaged too.
+      - name: Package chart
+        id: package
+        run: |
+          name="$(yq '.name' Chart.yaml)"
+          version="$(yq '.version' Chart.yaml)"
+          helm package . --destination "${RUNNER_TEMP}/dist"
+          {
+            echo "name=${name}"
+            echo "version=${version}"
+            echo "package=${RUNNER_TEMP}/dist/${name}-${version}.tgz"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: gh-pages
+          ref: gh-pages
+          persist-credentials: true
+
+      - name: Check whether this version is already published
+        id: published
+        working-directory: gh-pages
+        env:
+          NAME: ${{ steps.package.outputs.name }}
+          VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          if yq -e '.entries[env(NAME)][] | select(.version == env(VERSION))' index.yaml > /dev/null 2>&1; then
+            echo "::notice::${NAME} ${VERSION} is already published. Bump the version in Chart.yaml to release."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Add package and update the Helm repo index
+        if: steps.published.outputs.exists == 'false'
+        working-directory: gh-pages
+        env:
+          PACKAGE: ${{ steps.package.outputs.package }}
+          NAME: ${{ steps.package.outputs.name }}
+          VERSION: ${{ steps.package.outputs.version }}
+          REPO_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+        run: |
+          set -euo pipefail
+          cp "${PACKAGE}" .
+          helm repo index . --url "${REPO_URL}" --merge index.yaml
+          git add index.yaml "${NAME}-${VERSION}.tgz"
+
+          # Only index.yaml and chart packages may be committed.
+          git diff --cached --name-only | while read -r file; do
+            case "${file}" in
+              index.yaml|*.tgz) ;;
+              *) echo "::error::Unexpected file staged: ${file}"; exit 1 ;;
+            esac
+          done
+
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "Add chart package ${NAME}-${VERSION}"
+          git push origin gh-pages

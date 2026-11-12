@@ -1,0 +1,186 @@
+---
+name: "Pull Request: Validate"
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+      - synchronize
+
+concurrency:
+  group: ${{ github.head_ref }}-pr-validate
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  HELM_UNITTEST_VERSION: v1.0.3
+
+jobs:
+  pre-commit-check:
+    name: Perform pre-commit check
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Mise and required tools
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          cache_key: "mise-v1-{{file_hash}}"
+
+      - name: Run pre-commit
+        run: pre-commit run --all-files --show-diff-on-failure
+
+  lint-workflows:
+    name: Lint workflows
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Mise and required tools
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          cache_key: "mise-v1-{{file_hash}}"
+
+      - name: Run zizmor
+        run: zizmor .github
+
+      - name: Run actionlint
+        run: actionlint
+
+  lint-chart:
+    name: Lint chart
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Mise and required tools
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          cache_key: "mise-v1-{{file_hash}}"
+
+      # ct skips its own version check when given --charts, and the release
+      # workflow only publishes versions that aren't on gh-pages yet.
+      - name: Check the chart version was bumped
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if git diff --quiet "origin/${BASE_REF}...HEAD" -- Chart.yaml values.yaml values.schema.json templates README.md .helmignore; then
+            echo "No chart files changed."
+            exit 0
+          fi
+          old="$(git show "origin/${BASE_REF}:Chart.yaml" | yq '.version')"
+          new="$(yq '.version' Chart.yaml)"
+          if [[ "${old}" == "${new}" || "$(printf '%s\n%s\n' "${old}" "${new}" | sort -V | tail -1)" != "${new}" ]]; then
+            echo "::error file=Chart.yaml::Chart files changed, so version must be higher than ${old} on ${BASE_REF}."
+            exit 1
+          fi
+          echo "Version ${old} -> ${new}"
+
+      - name: Run chart-testing (lint)
+        run: ct lint --config .ci/ct/ct.yaml --charts .
+
+  test-unittest-chart:
+    name: Unit-test chart
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Mise and required tools
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          cache_key: "mise-v1-{{file_hash}}"
+
+      - name: Install helm-unittest
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest.git --version "${HELM_UNITTEST_VERSION}" --verify=false
+
+      - name: Run tests
+        run: helm unittest -f 'unittests/**/*_test.yaml' .
+
+  test-build-matrix:
+    name: Build Kubernetes version matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      versions: ${{ steps.build.outputs.versions }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read the minimum Kubernetes version from Chart.yaml
+        id: min-version
+        run: |
+          version="$(sed -nE 's/^kubeVersion: *"?>=([0-9]+\.[0-9]+).*/\1/p' Chart.yaml)"
+          [[ -n "${version}" ]] || { echo "::error file=Chart.yaml::kubeVersion must look like >=1.30.0-0"; exit 1; }
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Kubernetes version matrix
+        id: build
+        uses: ./.github/actions/build-k8s-k3s-version-matrix # zizmor: ignore[self-repository] intentional workspace-local reference
+        with:
+          min_k8s_version: ${{ steps.min-version.outputs.version }}
+          github_token: ${{ github.token }}
+
+  test-install-chart:
+    name: Install chart (${{ matrix.k8s_version }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs:
+      - test-build-matrix
+    strategy:
+      matrix:
+        include: ${{ fromJSON(needs.test-build-matrix.outputs.versions) }}
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install kubectl matching k8s version
+        uses: yokawasa/action-setup-kube-tools@f8b2f6cdd1eb8575530049beacfe5d04c0ea8944 # v0.14.1
+        with:
+          setup-tools: |
+            kubectl
+          kubectl: "${{ matrix.k8s_version }}"
+
+      - name: Install Mise and required tools
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          cache_key: "mise-v1-{{file_hash}}"
+
+      - name: Create a new k3s cluster
+        env:
+          K3S_IMAGE: docker.io/rancher/k3s
+          K3S_TAG: ${{ matrix.k3s_tag }}
+        run: |
+          k3d cluster create --image "${K3S_IMAGE}:${K3S_TAG}"
+          echo "::group::Waiting for cluster readiness"
+          while ! kubectl get serviceaccount default >/dev/null; do sleep 1; done
+          echo "::endgroup::"
+
+      - name: Remove node taints
+        run: |
+          kubectl taint --all=true nodes node.cloudprovider.kubernetes.io/uninitialized- || true
+
+      - name: Run chart-testing (install)
+        run: ct install --config .ci/ct/ct.yaml --charts .
