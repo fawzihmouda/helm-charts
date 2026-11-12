@@ -5,3 +5,8 @@ unittests/
 *.gotmpl
 .git/
 .gitignore
+.ci/
+.github/
+.mise.toml
+.pre-commit-config.yaml
+.yamllint.yml

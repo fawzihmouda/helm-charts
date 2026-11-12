@@ -1,0 +1,9 @@
+---
+chart-yaml-schema: .ci/ct/chart_schema.yaml
+lint-conf: .yamllint.yml
+
+remote: origin
+target-branch: main
+validate-maintainers: false
+
+helm-extra-args: --timeout 600s
