@@ -11,7 +11,6 @@ on:
       - values.yaml
       - values.schema.json
       - "templates/**"
-      - README.md
 
 concurrency:
   group: release
