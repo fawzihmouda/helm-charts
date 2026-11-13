@@ -1,3 +1,15 @@
 apiVersion: v1
-entries: {}
-generated: "2026-11-11T03:54:16.618899013Z"
+entries:
+  application:
+  - apiVersion: v2
+    created: "2026-11-13T06:30:39.550626333Z"
+    description: Generic Helm chart for Deployment, StatefulSet, DaemonSet, Job and
+      CronJob
+    digest: cf50f1ae3cb84a031cdca4ce1f3072999ada9603f3cc3f9aaef04e815a19becc
+    kubeVersion: '>=1.30.0-0'
+    name: application
+    type: application
+    urls:
+    - https://fawzihmouda.github.io/helm-charts/application-1.0.0.tgz
+    version: 1.0.0
+generated: "2026-11-13T06:30:39.546351421Z"
