@@ -78,7 +78,7 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
-          if git diff --quiet "origin/${BASE_REF}...HEAD" -- Chart.yaml values.yaml values.schema.json templates README.md; then
+          if git diff --quiet "origin/${BASE_REF}...HEAD" -- Chart.yaml values.yaml values.schema.json templates; then
             echo "No chart files changed."
             exit 0
           fi
